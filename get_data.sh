@@ -16,4 +16,16 @@ echo Uncompressing
 ls *.gz | xargs gunzip -v
 ls *.tar | perl -ne 'chomp($_); system "tar xvf $_";'
 
+R  --slave --vanilla --quiet --no-save <<EEE
+
+source("../r_code/functions.R");
+read_tax_data_and_compress();
+
+EEE
+
+echo Data downloaded using ../get_data.sh script on data> DATA_README.txt
+echo `date` >> DATA_README.txt
+echo this data is update weekly so run the script again if you consider it is outdated >> DATA_README.txt
+
+
 echo Done  
