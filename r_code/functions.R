@@ -3,13 +3,17 @@ print_out<-function(string,LOG){
 }
 
 get_path_to_root = function(nodes_info, tax_id,names_info) {
-  parent_id = 2; 
+  parent_id = 9999999; 
   id = tax_id;
+  path = data.frame(tax_id = id,name_text = nodes_info[which(nodes_info$tax_id == id ),"name_txt"]);
+  c <- 2;
   while ( parent_id > 1  ){
-    parent_id = nodes_info[which(nodes_info$tax_id == id ),"parent_tax_id"];
+    path[counter,c("tax_id","name_text")]parent_id = nodes_info[which(nodes_info$tax_id == id ),c("parent_tax_id","name_txt")];
+    c <- c +1;
     id = parent_id;
-    cat(str_c(id,names_info[which(names_info$tax_id == id || names_info$`name class` == "scientific name"),"name_txt"],sep=" "),"\n");
+    #cat(str_c(id,names_info[which(names_info$tax_id == id || names_info$`name class` == "scientific name"),"name_txt"],sep=" "),"\n");
   }
+  return(path);
 }
 read_tax_data_and_compress = function () {
         print_out("Reading gi to tax id mapping");
