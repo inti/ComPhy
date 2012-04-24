@@ -15,7 +15,7 @@ use Fcntl;
 
 use PhyloStratiphytUtils;
 
-our (   $help, $man, $tax_folder, $blast_out, $blast_format,
+our (   $help, $man, $tax_folder, $blast_out, $blast_format, $query_taxon,
         $nucl_only, $prot_only, $seq_to_gi, $tax_info, $use_coverage);
 
 GetOptions(
@@ -29,6 +29,7 @@ GetOptions(
     'seq_to_gi=s' => \$seq_to_gi,
     'tax_info=s' => \$tax_info,
     'use_coverage' => \$use_coverage,
+    'query_taxon=s' => \$query_taxon,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
