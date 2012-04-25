@@ -35,8 +35,9 @@ $tax_ftp ||= "ftp://ftp.ncbi.nih.gov/pub/taxonomy";
 my @files = qw (gi_taxid_prot.dmp.gz gi_taxid_nucl.dmp.gz taxdump.tar.gz);
 if ($tax_folder){
     print_OUT("Setting taxonomy folder to [ $tax_folder ]");
-    unless(-d $tax_folder) {
+    if (not -d $tax_folder) {
         mkdir($tax_folder);
+        $get_files = 1;
     } 
     print_OUT("Moving into [ $tax_folder ]");
     chdir("$tax_folder");
