@@ -122,7 +122,7 @@ foreach my $file (@$blast_out){
             $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}]; 
         }
         next if (not defined $seq_to_tax_db{$subject_id[1]});
-        $S{ $seq_to_tax_db{$subject_id[1]} } =+ (-log ($data[ $fields{'evalue'}])) * $coverage;
+        $S{ $seq_to_tax_db{$subject_id[1]} } += (-log ($data[ $fields{'evalue'}])) * $coverage;
 
 
 #        print $subject_id[1],"\t",$seq_to_tax_db{$subject_id[1]},"\n";
@@ -137,10 +137,42 @@ foreach my $file (@$blast_out){
 
 print Dumper(%S);
 
+print_OUT("Finished processing blast output");
+
+my $main_taxon = $db->get_taxon(-taxonid => $query_taxon);
+
+print_OUT("Starting to calculate PhyloStratus scores");
+print_OUT("Identifiying last common ancestors between [ " . $main_taxon->scientific_name . " ] and [ " . scalar (keys %S) . " ] target species");
+
+# get target species and add the query specie
+my @species_names = map { $db->get_taxon(-taxonid => $_)->scientific_name;  } keys %S;
+# obtain a tree containing only the species of interest
+my $tree = $db->get_tree((@species_names,$main_taxon->scientific_name));
+# remove redundant nodes, i.e., those with only one ancestor AND one descentdant.
+$tree->contract_linear_paths;
+#my $out = new Bio::TreeIO(-fh => \*STDOUT, -format => 'newick');
+#$out->write_tree($tree),"\n";
+
+my $qry_node = $tree->find_node($main_taxon->id);
+
+my %LCA = (); # this hash stores the the last-common ancestor between the query species and the target specie. This node represent oldest node to which the score of the species needs to be addedd.
+my %S_f = ();
+foreach my $target_node ($tree->get_nodes){
+    next if ($target_node->id eq $qry_node->id);
+    next unless (scalar $target_node->each_Descendent() == 0);
+    my $lca = $tree->get_lca(($target_node,$qry_node));
+    print $qry_node->scientific_name," ",$target_node->scientific_name," ",$lca->scientific_name,"\n";
+    $LCA{$target_node->id} = $lca->id;
+    do {
+        my $anc = $target_node->ancestor();
+        $S_f{ $anc->id } += $S{ $target_node->id() };
+        print "\t",$anc->scientific_name,"\t", $S_f{ $anc->id },"\n";
+       next if ( $lca->id() eq $anc->id  );
+    }
+}
+
 print_OUT("Done");
 
 
 exit;
-
-
 
