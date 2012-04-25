@@ -1,8 +1,6 @@
 #!/usr/bin/perl 
 use strict;
 use warnings;
-use MLDBM qw(DB_File Storable);
-use Fcntl;
 use Data::Dumper;
 use Getopt::Long;
 use Pod::Usage;
@@ -40,6 +38,7 @@ if ($tax_folder){
     unless(-d $tax_folder) {
         mkdir($tax_folder);
     } 
+    print_OUT("Moving into [ $tax_folder ]");
     chdir("$tax_folder");
 }
 

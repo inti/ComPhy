@@ -113,17 +113,18 @@ sub build_database {
     print_OUT("Creating DBs on disk");
     
     my %seq_to_tax_db;
-    
+    # remove previous db file.
+    unlink ("$seq_to_tax_db_name.db") if (-e "$seq_to_tax_db_name.db"); 
     my $SEQ = tie %seq_to_tax_db, "DB_File", "$seq_to_tax_db_name.db", O_RDWR|O_CREAT, 0640 or die "Cannot open file to create db [ $seq_to_tax_db_name ]: $!\n";
     
     # set the sequences id to taxonomy id database.
     my $seq_id_files = [];
     if ($seq_id_files_to_parse eq 'both') {
-        $seq_id_files = ["$tax_folder/gi_taxid_nucl.dmp","$tax_folder/gi_taxid_nucl.dmp"];
+        $seq_id_files = ["gi_taxid_nucl.dmp","gi_taxid_nucl.dmp"];
     } elsif ($seq_id_files_to_parse eq 'nucl') {
-        $seq_id_files = ["$tax_folder/gi_taxid_nucl.dmp"];        
+        $seq_id_files = ["gi_taxid_nucl.dmp"];        
     } elsif ($seq_id_files_to_parse eq 'prot') {
-        $seq_id_files = ["$tax_folder/gi_taxid_prot.dmp"];        
+        $seq_id_files = ["gi_taxid_prot.dmp"];        
     }
     # read file and store the mapping between ids.
     foreach my $f (@$seq_id_files){
@@ -131,10 +132,11 @@ sub build_database {
         open (DMP,$f) or die $!;
         my $n_lines = get_file_number_of_lines($f);
         my $type;
-        $type = 'prot' if ($f eq "$tax_folder/gi_taxid_prot.dmp");
-        $type = 'nucl' if ($f eq "$tax_folder/gi_taxid_nucl.dmp");
+        $type = 'prot' if ($f eq "gi_taxid_prot.dmp");
+        $type = 'nucl' if ($f eq "gi_taxid_nucl.dmp");
+	my $counter = 0;
         while (my $line = <DMP>) {
-            print scalar localtime," \t", progress_bar($.,$n_lines);
+            print scalar localtime," \t", progress_bar(++$counter,$n_lines);
             chomp($line);
             my($gi,$tax_id) = split(/[\s+\t+]/,$line);
             $seq_to_tax_db{$gi} = $tax_id; #{' tax_id' => $tax_id, type => ""};
