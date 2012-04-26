@@ -7,6 +7,8 @@ use Data::Dumper;
 use Getopt::Long;
 use Pod::Usage;
 use PDL;
+use PDL::Matrix;
+use PDL::NiceSlice;
 use MLDBM qw(DB_File Storable);
 use Fcntl;
 
@@ -86,6 +88,9 @@ my %S = (); # hash will store to score for each species.
 
 print_OUT("Starting to parse blast output");
 $seq_to_tax_db{"322792145"} = 13686;
+
+my %target_taxons = ();
+my $seq_counter = 0;
 foreach my $file (@$blast_out){
     #print_OUT("   '-> [ $file ]");
     open (FILE,$file)or die $!;
@@ -106,6 +111,7 @@ foreach my $file (@$blast_out){
                     $fields{$fs[$i]} = $i;
                 }
             }
+            $seq_counter++;
             next;
         }
         chomp($line);
@@ -114,65 +120,130 @@ foreach my $file (@$blast_out){
         if (exists $fields{'query/sbjct_frames'}){
             $data[ $fields{'query/sbjct_frames'} ] =~ s/\/\w+$//;
         }
-#print join "\n", keys %fields,"\n";
-#        print $data[ $fields{'subject_id'}],"\n";
         my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
         my $coverage = 1;
         if (defined $use_coverage) {
             $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}]; 
         }
-        next if (not defined $seq_to_tax_db{$subject_id[1]});
-        $S{ $seq_to_tax_db{$subject_id[1]} } += (-log ($data[ $fields{'evalue'}])) * $coverage;
+        if ($data[ $fields{'evalue'}] == 0){
+            $S{ $data[ $fields{'query_id'}] }{ $seq_to_tax_db{$subject_id[1]} } += 500;
+        } else {
+            $S{ $data[ $fields{'query_id'}] }{ $seq_to_tax_db{$subject_id[1]} } += (-log ($data[ $fields{'evalue'}])) * $coverage;
+        }
+        $target_taxons{$seq_to_tax_db{$subject_id[1]}} = "";
+    }
+}
+print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
 
+# for easy operation store the score of each gene on each specie on a matrix. Later internal nodes of the tree will be added as additional columns, that will make calculation of scores for new columns (internal nodes) faster.
+# print score matrix;
 
-#        print $subject_id[1],"\t",$seq_to_tax_db{$subject_id[1]},"\n";
-#        my $taxon =   $db->get_taxon(-taxonid => $seq_to_tax_db{$subject_id[1]});
-#        print "id is ", $taxon->id, "\n"; # 9606
-#        print "rank is ", $taxon->rank, "\n"; # species
-#        print "scientific name is ", $taxon->scientific_name, "\n"; # Homo sapiens
-#        print "division is ", $taxon->division, "\n"; # Primates
-        # add hit score to the target specie
+my $S_g_f = [];
+my %S_g_f_gene_idx = ();
+my %S_g_f_taxon_idx = ();
+my $gene_counter = 0;
+my $taxon_counter = 0;
+
+foreach my $spc (sort {$a cmp $b} keys %target_taxons){
+    $S_g_f_taxon_idx{$spc} = $taxon_counter++;
+}
+my $max_leaf_idx = $taxon_counter;
+
+while (my ($gene, $target_species) = each %S){
+    $S_g_f_gene_idx{$gene} = $gene_counter++;
+    foreach my $spc (sort {$a cmp $b} keys %target_taxons)  {
+        if (not exists $target_species->{$spc}) { 
+            $S_g_f->[ $S_g_f_gene_idx{$gene}  ] [ $S_g_f_taxon_idx{$spc} ] = 0;
+        } else {
+            $S_g_f->[ $S_g_f_gene_idx{$gene}  ] [ $S_g_f_taxon_idx{$spc} ] = $target_species->{$spc};
+        }
     }
 }
 
-print Dumper(%S);
+# create matrix in PDL format
+$S_g_f = mpdl $S_g_f;
+#$S_g_f /=  $S_g_f->xchg(0,1)->sumover;
+print $S_g_f;
 
-print_OUT("Finished processing blast output");
-
+# get taxon information for the query taxon.
 my $main_taxon = $db->get_taxon(-taxonid => $query_taxon);
 
+
 print_OUT("Starting to calculate PhyloStratus scores");
-print_OUT("Identifiying last common ancestors between [ " . $main_taxon->scientific_name . " ] and [ " . scalar (keys %S) . " ] target species");
+print_OUT("Identifiying last common ancestors between [ " . $main_taxon->scientific_name . " ] and [ " . scalar (keys %target_taxons) . " ] target species");
 
 # get target species and add the query specie
-my @species_names = map { $db->get_taxon(-taxonid => $_)->scientific_name;  } keys %S;
+my @species_names = map { $db->get_taxon(-taxonid => $_)->scientific_name;  } keys %target_taxons;
 # obtain a tree containing only the species of interest
 my $tree = $db->get_tree((@species_names,$main_taxon->scientific_name));
 # remove redundant nodes, i.e., those with only one ancestor AND one descentdant.
 $tree->contract_linear_paths;
 #my $out = new Bio::TreeIO(-fh => \*STDOUT, -format => 'newick');
+#print_OUT("this is the contracted tree of interest");
 #$out->write_tree($tree),"\n";
 
+# get the node for the taxon of interest
 my $qry_node = $tree->find_node($main_taxon->id);
 
 my %LCA = (); # this hash stores the the last-common ancestor between the query species and the target specie. This node represent oldest node to which the score of the species needs to be addedd.
-my %S_f = ();
+my %S_f = (); # here store the cummulative score for each stratum over all genes.
+my %internal_descedents = ();
 foreach my $target_node ($tree->get_nodes){
-    next if ($target_node->id eq $qry_node->id);
-    next unless (scalar $target_node->each_Descendent() == 0);
+    # skip if it is the query specie
+    next if ($target_node->id eq $qry_node->id); 
+    # skip if the node does not have descendents, i.e., it the leaves. 
+    next if ($target_node->is_Leaf() == 1);
+    # get the last common ancestor of the two, the query and the target specie.
+    # store the name of the LCA
     my $lca = $tree->get_lca(($target_node,$qry_node));
-    print $qry_node->scientific_name," ",$target_node->scientific_name," ",$lca->scientific_name,"\n";
-    $LCA{$target_node->id} = $lca->id;
-    do {
-        my $anc = $target_node->ancestor();
-        $S_f{ $anc->id } += $S{ $target_node->id() };
-        print "\t",$anc->scientific_name,"\t", $S_f{ $anc->id },"\n";
-       next if ( $lca->id() eq $anc->id  );
-    }
+    $LCA{$target_node->id} = $lca;
+    $internal_descedents{ $lca->id } = return_all_Leaf_Descendents($lca);
 }
+# using the matrix indexes of the leaf descendents for each internal node calculate the score for each internal node
+my $I_g_f = mzeroes $gene_counter, scalar $tree->get_nodes - 1;
+print $I_g_f;
+foreach my $node_id ( sort { $tree->find_node($a)->height() <=> $tree->find_node($b)->height() }   keys %internal_descedents){
+    my $tree_node = $tree->find_node($node_id);
+    my $desc = $internal_descedents{$node_id};
+    my $mat_idx = [];
+    foreach my $taxon (@$desc){
+        next if ($taxon->id == $main_taxon->id);
+        push @{$mat_idx}, $S_g_f_taxon_idx{$taxon->id};
+    }
+    $S_g_f_taxon_idx{$node_id} = $taxon_counter++;
+    $mat_idx = pdl $mat_idx;
+    $S_g_f = $S_g_f->glue(1, $S_g_f(,$mat_idx)->xchg(0,1)->sumover );
+    my $node_descendents_idx = [];
+    foreach my $taxon ($tree_node->each_Descendent()){
+        next if ($taxon->id == $main_taxon->id);
+        push @{$node_descendents_idx},  $S_g_f_taxon_idx{$taxon->id};
+    }
+    $node_descendents_idx = pdl $node_descendents_idx;
+    print $taxon_counter," ",scalar $tree_node->each_Descendent()," ",$node_descendents_idx,"\n";
+#    print $S_g_f(,$S_g_f_taxon_idx{$node_id});
+#    print $S_g_f( , $node_descendents_idx );
+    getc;
+    $I_g_f(,$taxon_counter) = $S_g_f(,$S_g_f_taxon_idx{$node_id}) - $S_g_f( , $node_descendents_idx );
+#    print $I_g_f;
+    getc;
+}
+
+print "I_g_f\n";
+print $I_g_f;
+print "S_g_f\n";
+print $S_g_f,"\n";
+
 
 print_OUT("Done");
 
 
 exit;
 
+sub return_all_Leaf_Descendents {
+    my $taxon = shift;
+    my @back = ();
+    foreach my $d ($taxon->get_all_Descendents()){
+        push @back, $d if ($d->is_Leaf == 1);
+    }
+    return(\@back);
+}
