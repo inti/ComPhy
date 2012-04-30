@@ -54,22 +54,30 @@ print_OUT("Mapping sequence ids to taxonomy ids");
 
 my (%seq_to_tax_db,%tax_info_db,%tax_tree_db);
 if (defined $tax_folder){
+    if (not -e "$tax_folder/$seq_to_gi.db") {
+        print_OUT("Moving into [ $tax_folder ] to create db");
+        chdir($tax_folder);
+        unlink("$seq_to_gi.db");
+        %seq_to_tax_db  = build_database($seq_to_gi,$tax_folder,$seq_id_files);   
+        chdir("../");
+    }
     print_OUT("Openning databases");
     print_OUT("   '-> [ $tax_folder/$seq_to_gi.db ]");
-
     tie %seq_to_tax_db, "DB_File", "$tax_folder/$seq_to_gi.db" or die "Cannot open db file [ $tax_folder/$seq_to_gi.db ]: $!\n";
     
 } else {
     print_OUT("Taxonomy information will downloaded and stored on folder [ data ]");
     $tax_folder = "data";
+    unless (-d $tax_folder){ mkdir($tax_folder);}
+    chdir($tax_folder);
     %seq_to_tax_db  = build_database($seq_to_gi,$tax_folder,$seq_id_files);   
+    chdir("../");
 }
 
 print_OUT("   '-> Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
 my $db = Bio::DB::Taxonomy->new(-source => 'flatfile', -nodesfile => $nodesfile, -namesfile => $namefile);
-
 #map { 
 #    print $_,"\t", $seq_to_tax_db{$_},"\n";
 #    my $taxon =   $db->get_taxon(-taxonid => $seq_to_tax_db{$_});
@@ -121,6 +129,7 @@ foreach my $file (@$blast_out){
             $data[ $fields{'query/sbjct_frames'} ] =~ s/\/\w+$//;
         }
         my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
+        next if (not exists $seq_to_tax_db{$subject_id[1]} );
         my $coverage = 1;
         if (defined $use_coverage) {
             $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}]; 
@@ -162,8 +171,7 @@ while (my ($gene, $target_species) = each %S){
 
 # create matrix in PDL format
 $S_g_f = mpdl $S_g_f;
-#$S_g_f /=  $S_g_f->xchg(0,1)->sumover;
-print $S_g_f;
+$S_g_f /=  $S_g_f->xchg(0,1)->sumover;
 
 # get taxon information for the query taxon.
 my $main_taxon = $db->get_taxon(-taxonid => $query_taxon);
@@ -199,33 +207,82 @@ foreach my $target_node ($tree->get_nodes){
     $LCA{$target_node->id} = $lca;
     $internal_descedents{ $lca->id } = return_all_Leaf_Descendents($lca);
 }
-# using the matrix indexes of the leaf descendents for each internal node calculate the score for each internal node
-my $I_g_f = mzeroes $gene_counter, scalar $tree->get_nodes - 1;
-print $I_g_f;
-foreach my $node_id ( sort { $tree->find_node($a)->height() <=> $tree->find_node($b)->height() }   keys %internal_descedents){
-    my $tree_node = $tree->find_node($node_id);
-    my $desc = $internal_descedents{$node_id};
+
+# get the root of the tree
+my $tree_root = $tree->get_root_node;
+# loop over each of the tree leaves
+foreach my $node_id (@{ return_all_Leaf_Descendents($tree_root) }){
+    # skip if the leave is the taxon of interest
+    next if ($node_id->id == $main_taxon->id);
+    # get the last common ancestor of the target and taxon of interest
+    my $lca = $tree->get_lca(($node_id,$qry_node));
+    #print $node_id->scientific_name, "<->",$lca->scientific_name,"\n";
+    # get the path to the root of the target taxon
+    my @path = reverse $tree->get_lineage_nodes($node_id);
+    #map { print " -> ",  $_->scientific_name } @path;
+    #print "\n";
+    # loop from the target taxon to the LCA and add the target taxon score to each ancestor
+    foreach my $ancestor ( @path){
+        #        print   $node_id->scientific_name," : ", $node_id->ancestor->scientific_name," : ",
+        #$S_g_f_taxon_idx{$node_id->id}," : ",$lca->scientific_name," : ",$ancestor->scientific_name,"\n";
+        
+        if (exists $S_g_f_taxon_idx{$node_id->ancestor->id}){
+            my $matrix_idx = $S_g_f_taxon_idx{$node_id->ancestor->id};
+            $S_g_f(,$matrix_idx) += $S_g_f(,$matrix_idx);
+        } else {
+            # record its position on the matrix
+            $S_g_f_taxon_idx{$node_id->ancestor->id} = $taxon_counter++;
+            # create new column
+            $S_g_f = $S_g_f->glue(1, $S_g_f(,$S_g_f_taxon_idx{$node_id->id}) );
+        }
+        last if ($ancestor->id == $lca->id);
+    }
+}
+
+
+print join " ", sort { $S_g_f_taxon_idx{$a} <=> $S_g_f_taxon_idx{$b} } keys %S_g_f_taxon_idx;
+print "\n";
+print $S_g_f(1,);
+getc;
+
+
+foreach my $node_id ( sort { $tree->find_node($a)->height() <=> $tree->find_node($b)->height() }   keys %internal_descedents){ # get the nodes sorted from the tip to the root
+    my $tree_node = $tree->find_node($node_id); # get the taxon oject for the specie
+    my $desc = $internal_descedents{$node_id}; # get the descendents leaves of this node.
+    # for each of the descendatns get its taxon id and with it recover its position on the matrix.
     my $mat_idx = [];
     foreach my $taxon (@$desc){
         next if ($taxon->id == $main_taxon->id);
         push @{$mat_idx}, $S_g_f_taxon_idx{$taxon->id};
     }
-    $S_g_f_taxon_idx{$node_id} = $taxon_counter++;
+    # use the index of the descendent leaves to calculate the score for this internal node
     $mat_idx = pdl $mat_idx;
+    # create the score
     $S_g_f = $S_g_f->glue(1, $S_g_f(,$mat_idx)->xchg(0,1)->sumover );
-    my $node_descendents_idx = [];
-    foreach my $taxon ($tree_node->each_Descendent()){
-        next if ($taxon->id == $main_taxon->id);
-        push @{$node_descendents_idx},  $S_g_f_taxon_idx{$taxon->id};
-    }
-    $node_descendents_idx = pdl $node_descendents_idx;
-    print $taxon_counter," ",scalar $tree_node->each_Descendent()," ",$node_descendents_idx,"\n";
-#    print $S_g_f(,$S_g_f_taxon_idx{$node_id});
-#    print $S_g_f( , $node_descendents_idx );
-    getc;
-    $I_g_f(,$taxon_counter) = $S_g_f(,$S_g_f_taxon_idx{$node_id}) - $S_g_f( , $node_descendents_idx );
-#    print $I_g_f;
-    getc;
+    # record its position on the matrix
+    $S_g_f_taxon_idx{$node_id} = $taxon_counter++;
+} # finish with filling the $S_g_f matrix
+
+# using the matrix indexes of the leaf descendents for each internal node calculate the score for each internal node
+my $I_g_f = mzeroes $gene_counter, scalar $tree->get_nodes - 1;
+
+$tree_root = $tree->get_root_node;
+foreach my $node_id ( $tree_root->get_all_Descendents()){ 
+    
+    #    my $desc = $internal_descedents{$node_id}; # get the descendents leaves of this node.
+#    my $node_descendents_idx = [];
+#    print $node_id," => ";
+#    foreach my $taxon ($tree_node->each_Descendent()){
+#        next if ($taxon->id == $main_taxon->id);
+#        push @{$node_descendents_idx},  $S_g_f_taxon_idx{$taxon->id};
+#        print $taxon->id, " ",$taxon->scientific_name," ",$S_g_f_taxon_idx{$taxon->id},"\n";
+#    }
+#    $node_descendents_idx = pdl $node_descendents_idx;
+#    print $taxon_counter," ",scalar $tree_node->each_Descendent()," ",$node_descendents_idx,"\n";
+#    #    print $S_g_f(,$S_g_f_taxon_idx{$node_id});
+#    #    print $S_g_f( , $node_descendents_idx );
+#    getc;
+#    $I_g_f(,$taxon_counter) = $S_g_f(,$S_g_f_taxon_idx{$node_id}) - $S_g_f( , $node_descendents_idx );
 }
 
 print "I_g_f\n";
@@ -246,4 +303,10 @@ sub return_all_Leaf_Descendents {
         push @back, $d if ($d->is_Leaf == 1);
     }
     return(\@back);
+}
+
+sub nr_array {
+    my %tmp = ();
+    map { $tmp{$_} = ''; } @_;
+    return(keys %tmp); 
 }

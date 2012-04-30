@@ -131,15 +131,12 @@ sub build_database {
         print_OUT("   '-> [ $f ]");
         open (DMP,$f) or die $!;
         my $n_lines = get_file_number_of_lines($f);
-        my $type;
-        $type = 'prot' if ($f eq "gi_taxid_prot.dmp");
-        $type = 'nucl' if ($f eq "gi_taxid_nucl.dmp");
         my $counter = 0;
         while (my $line = <DMP>) {
-            print scalar localtime," \t", progress_bar($counter,$n_lines);
+            #print scalar localtime," \t", progress_bar($.,$n_lines);
             chomp($line);
             my($gi,$tax_id) = split(/[\s+\t+]/,$line);
-            $seq_to_tax_db{$gi} = $tax_id; #{' tax_id' => $tax_id, type => ""};
+            $seq_to_tax_db{$gi} = $tax_id;         
         }
         close(DMP);
         print "\n";
