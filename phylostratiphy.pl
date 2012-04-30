@@ -246,44 +246,9 @@ print $S_g_f(1,);
 getc;
 
 
-foreach my $node_id ( sort { $tree->find_node($a)->height() <=> $tree->find_node($b)->height() }   keys %internal_descedents){ # get the nodes sorted from the tip to the root
-    my $tree_node = $tree->find_node($node_id); # get the taxon oject for the specie
-    my $desc = $internal_descedents{$node_id}; # get the descendents leaves of this node.
-    # for each of the descendatns get its taxon id and with it recover its position on the matrix.
-    my $mat_idx = [];
-    foreach my $taxon (@$desc){
-        next if ($taxon->id == $main_taxon->id);
-        push @{$mat_idx}, $S_g_f_taxon_idx{$taxon->id};
-    }
-    # use the index of the descendent leaves to calculate the score for this internal node
-    $mat_idx = pdl $mat_idx;
-    # create the score
-    $S_g_f = $S_g_f->glue(1, $S_g_f(,$mat_idx)->xchg(0,1)->sumover );
-    # record its position on the matrix
-    $S_g_f_taxon_idx{$node_id} = $taxon_counter++;
-} # finish with filling the $S_g_f matrix
 
 # using the matrix indexes of the leaf descendents for each internal node calculate the score for each internal node
 my $I_g_f = mzeroes $gene_counter, scalar $tree->get_nodes - 1;
-
-$tree_root = $tree->get_root_node;
-foreach my $node_id ( $tree_root->get_all_Descendents()){ 
-    
-    #    my $desc = $internal_descedents{$node_id}; # get the descendents leaves of this node.
-#    my $node_descendents_idx = [];
-#    print $node_id," => ";
-#    foreach my $taxon ($tree_node->each_Descendent()){
-#        next if ($taxon->id == $main_taxon->id);
-#        push @{$node_descendents_idx},  $S_g_f_taxon_idx{$taxon->id};
-#        print $taxon->id, " ",$taxon->scientific_name," ",$S_g_f_taxon_idx{$taxon->id},"\n";
-#    }
-#    $node_descendents_idx = pdl $node_descendents_idx;
-#    print $taxon_counter," ",scalar $tree_node->each_Descendent()," ",$node_descendents_idx,"\n";
-#    #    print $S_g_f(,$S_g_f_taxon_idx{$node_id});
-#    #    print $S_g_f( , $node_descendents_idx );
-#    getc;
-#    $I_g_f(,$taxon_counter) = $S_g_f(,$S_g_f_taxon_idx{$node_id}) - $S_g_f( , $node_descendents_idx );
-}
 
 print "I_g_f\n";
 print $I_g_f;
