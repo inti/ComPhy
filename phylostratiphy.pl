@@ -246,17 +246,4 @@ print_OUT("Done");
 
 exit;
 
-sub return_all_Leaf_Descendents {
-    my $taxon = shift;
-    my @back = ();
-    foreach my $d ($taxon->get_all_Descendents()){
-        push @back, $d if ($d->is_Leaf == 1);
-    }
-    return(\@back);
-}
 
-sub nr_array {
-    my %tmp = ();
-    map { $tmp{$_} = ''; } @_;
-    return(keys %tmp); 
-}

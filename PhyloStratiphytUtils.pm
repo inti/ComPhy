@@ -16,8 +16,23 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw( parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw( parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw( parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files nr_array return_all_Leaf_Descendents);				# symbols to export by default
+@EXPORT_OK = qw( parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files nr_array return_all_Leaf_Descendents);			# symbols to export on request
+
+sub return_all_Leaf_Descendents {
+    my $taxon = shift;
+    my @back = ();
+    foreach my $d ($taxon->get_all_Descendents()){
+        push @back, $d if ($d->is_Leaf == 1);
+    }
+    return(\@back);
+}
+
+sub nr_array {
+    my %tmp = ();
+    map { $tmp{$_} = ''; } @_;
+    return(keys %tmp); 
+}
 
 sub read_taxonomy_files {
     my $tax_folder = shift;

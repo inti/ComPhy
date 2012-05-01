@@ -7,7 +7,7 @@ use PhyloStratiphytUtils;
 
 my $tax_folder = $ARGV[0];
 
-print_OUT("   '-> Reading phylogenetic tree and species information");
+print_OUT("Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
 my $db = Bio::DB::Taxonomy->new(-source => 'flatfile', -nodesfile => $nodesfile, -namesfile => $namefile);
