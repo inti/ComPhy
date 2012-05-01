@@ -78,15 +78,6 @@ print_OUT("   '-> Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
 my $db = Bio::DB::Taxonomy->new(-source => 'flatfile', -nodesfile => $nodesfile, -namesfile => $namefile);
-#map { 
-#    print $_,"\t", $seq_to_tax_db{$_},"\n";
-#    my $taxon =   $db->get_taxon(-taxonid => $seq_to_tax_db{$_});
-#    print print "id is ", $taxon->id, "\n"; # 9606
-#    print "rank is ", $taxon->rank, "\n"; # species
-#    print "scientific name is ", $taxon->scientific_name, "\n"; # Homo sapiens
-#    print "division is ", $taxon->division, "\n"; # Primates
-#    getc; 
-#} keys %seq_to_tax_db;
 
 
 ### define some variables to start storing the results
@@ -95,7 +86,7 @@ my %S = (); # hash will store to score for each species.
 
 
 print_OUT("Starting to parse blast output");
-$seq_to_tax_db{"322792145"} = 13686;
+$seq_to_tax_db{"322792145"} = 13686; # this is to be removed 
 
 my %target_taxons = ();
 my $seq_counter = 0;
@@ -129,7 +120,8 @@ foreach my $file (@$blast_out){
             $data[ $fields{'query/sbjct_frames'} ] =~ s/\/\w+$//;
         }
         my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
-        next if (not exists $seq_to_tax_db{$subject_id[1]} );
+        next if (not exists $seq_to_tax_db{$subject_id[1]} ); # to be removed later
+        next if (not defined $db->get_taxon(-taxonid => $seq_to_tax_db{$subject_id[1]})); # to avoid crash later when recovering the taxon objects.
         my $coverage = 1;
         if (defined $use_coverage) {
             $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}]; 
@@ -137,6 +129,7 @@ foreach my $file (@$blast_out){
         if ($data[ $fields{'evalue'}] == 0){
             $S{ $data[ $fields{'query_id'}] }{ $seq_to_tax_db{$subject_id[1]} } += 500;
         } else {
+            next if ((-log ($data[ $fields{'evalue'}])) < 0); # to be removed when using p-value instead of e-value.
             $S{ $data[ $fields{'query_id'}] }{ $seq_to_tax_db{$subject_id[1]} } += (-log ($data[ $fields{'evalue'}])) * $coverage;
         }
         $target_taxons{$seq_to_tax_db{$subject_id[1]}} = "";
@@ -156,7 +149,6 @@ my $taxon_counter = 0;
 foreach my $spc (sort {$a cmp $b} keys %target_taxons){
     $S_g_f_taxon_idx{$spc} = $taxon_counter++;
 }
-my $max_leaf_idx = $taxon_counter;
 
 while (my ($gene, $target_species) = each %S){
     $S_g_f_gene_idx{$gene} = $gene_counter++;
@@ -177,7 +169,7 @@ $S_g_f /=  $S_g_f->xchg(0,1)->sumover;
 my $main_taxon = $db->get_taxon(-taxonid => $query_taxon);
 
 
-print_OUT("Starting to calculate PhyloStratus scores");
+print_OUT("Starting to calculate PhyloStratum scores");
 print_OUT("Identifiying last common ancestors between [ " . $main_taxon->scientific_name . " ] and [ " . scalar (keys %target_taxons) . " ] target species");
 
 # get target species and add the query specie
@@ -186,27 +178,11 @@ my @species_names = map { $db->get_taxon(-taxonid => $_)->scientific_name;  } ke
 my $tree = $db->get_tree((@species_names,$main_taxon->scientific_name));
 # remove redundant nodes, i.e., those with only one ancestor AND one descentdant.
 $tree->contract_linear_paths;
-#my $out = new Bio::TreeIO(-fh => \*STDOUT, -format => 'newick');
-#print_OUT("this is the contracted tree of interest");
-#$out->write_tree($tree),"\n";
 
 # get the node for the taxon of interest
 my $qry_node = $tree->find_node($main_taxon->id);
 
 my %LCA = (); # this hash stores the the last-common ancestor between the query species and the target specie. This node represent oldest node to which the score of the species needs to be addedd.
-my %S_f = (); # here store the cummulative score for each stratum over all genes.
-my %internal_descedents = ();
-foreach my $target_node ($tree->get_nodes){
-    # skip if it is the query specie
-    next if ($target_node->id eq $qry_node->id); 
-    # skip if the node does not have descendents, i.e., it the leaves. 
-    next if ($target_node->is_Leaf() == 1);
-    # get the last common ancestor of the two, the query and the target specie.
-    # store the name of the LCA
-    my $lca = $tree->get_lca(($target_node,$qry_node));
-    $LCA{$target_node->id} = $lca;
-    $internal_descedents{ $lca->id } = return_all_Leaf_Descendents($lca);
-}
 
 # get the root of the tree
 my $tree_root = $tree->get_root_node;
@@ -216,16 +192,11 @@ foreach my $node_id (@{ return_all_Leaf_Descendents($tree_root) }){
     next if ($node_id->id == $main_taxon->id);
     # get the last common ancestor of the target and taxon of interest
     my $lca = $tree->get_lca(($node_id,$qry_node));
-    #print $node_id->scientific_name, "<->",$lca->scientific_name,"\n";
+    $LCA{$lca->id} = $lca;
     # get the path to the root of the target taxon
     my @path = reverse $tree->get_lineage_nodes($node_id);
-    #map { print " -> ",  $_->scientific_name } @path;
-    #print "\n";
     # loop from the target taxon to the LCA and add the target taxon score to each ancestor
     foreach my $ancestor ( @path){
-        #        print   $node_id->scientific_name," : ", $node_id->ancestor->scientific_name," : ",
-        #$S_g_f_taxon_idx{$node_id->id}," : ",$lca->scientific_name," : ",$ancestor->scientific_name,"\n";
-        
         if (exists $S_g_f_taxon_idx{$node_id->ancestor->id}){
             my $matrix_idx = $S_g_f_taxon_idx{$node_id->ancestor->id};
             $S_g_f(,$matrix_idx) += $S_g_f(,$matrix_idx);
@@ -240,21 +211,35 @@ foreach my $node_id (@{ return_all_Leaf_Descendents($tree_root) }){
 }
 
 
-print join " ", sort { $S_g_f_taxon_idx{$a} <=> $S_g_f_taxon_idx{$b} } keys %S_g_f_taxon_idx;
-print "\n";
-print $S_g_f(1,);
-getc;
 
+my $last_recorded_lca = '';
 
+my @path_to_taxon = reverse $tree->get_lineage_nodes($main_taxon);
+for (my $i = 0; $i < scalar @path_to_taxon; $i++){
+    $last_recorded_lca = $i if (exists $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() });
+    next if ($last_recorded_lca eq '');
+    if (not exists $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() }){
+        $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() } = $S_g_f_taxon_idx{ $path_to_taxon[ $last_recorded_lca ]->id };
+    }
+}
 
-# using the matrix indexes of the leaf descendents for each internal node calculate the score for each internal node
-my $I_g_f = mzeroes $gene_counter, scalar $tree->get_nodes - 1;
+my $I_g_f;
+for (my $i = 0; $i < scalar @path_to_taxon; $i++){
+    next if (not exists $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() });
+    last if (not defined $path_to_taxon[$i]->ancestor);
+    my $idx_current = $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() };
+    my $idx_previous = $S_g_f_taxon_idx{ $path_to_taxon[$i]->ancestor->id() };
+    my $tmp_col = $S_g_f(,$idx_current) - $S_g_f(,$idx_previous);
+    push @{ $I_g_f }, [$tmp_col->list];
+}
+$I_g_f = pdl $I_g_f;
+my $S_f = $I_g_f->sumover; # here store the cummulative score for each stratum over all genes.
 
 print "I_g_f\n";
-print $I_g_f;
-print "S_g_f\n";
-print $S_g_f,"\n";
-
+print join " ",$I_g_f->dims;
+print "S_f\n";
+print $S_f;
+getc;
 
 print_OUT("Done");
 
