@@ -12,7 +12,7 @@ use PDL::NiceSlice;
 use MLDBM qw(DB_File Storable);
 use Fcntl;
 
-
+use constant e_constant => log(10);
 # local modules
 
 use PhyloStratiphytUtils;
@@ -42,6 +42,7 @@ $tax_info ||= "tax_info";
 
 print_OUT("Parsing taxonomy information");
 
+# define the ids presents of the taxo-to-id mapping files
 my $seq_id_files = 'both';
 if ($nucl_only) {
     $seq_id_files = "nucl";
@@ -52,6 +53,7 @@ if ($nucl_only) {
 }
 print_OUT("Mapping sequence ids to taxonomy ids");
 
+# load sequence to gene-id (gi) mappings
 my (%seq_to_tax_db,%tax_info_db,%tax_tree_db);
 if (defined $tax_folder){
     if (not -e "$tax_folder/$seq_to_gi.db") {
@@ -74,6 +76,7 @@ if (defined $tax_folder){
     chdir("../");
 }
 
+# load tree of life information, both node' connections and names of nodes.
 print_OUT("   '-> Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
@@ -90,11 +93,15 @@ $seq_to_tax_db{"322792145"} = 13686; # this is to be removed
 
 my %target_taxons = ();
 my $seq_counter = 0;
+
+# loop over blast results.
+# for each hit we will store the log(p-value) of the blast hit for each taxon of the tartget sequence.
 foreach my $file (@$blast_out){
     #print_OUT("   '-> [ $file ]");
     open (FILE,$file)or die $!;
     my %fields = ();
     while (my $line = <FILE>){
+        # if line has the header of the table. split the header and keep the columns names.
         if ($line =~ m/^#/){
             if ($line =~ m/^# Fields:/){
                 # clean up a bit the line
@@ -119,58 +126,71 @@ foreach my $file (@$blast_out){
         if (exists $fields{'query/sbjct_frames'}){
             $data[ $fields{'query/sbjct_frames'} ] =~ s/\/\w+$//;
         }
+        # extract the indetifiers of the target sequence
         my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
         next if (not exists $seq_to_tax_db{$subject_id[1]} ); # to be removed later
         next if (not defined $db->get_taxon(-taxonid => $seq_to_tax_db{$subject_id[1]})); # to avoid crash later when recovering the taxon objects.
+        # define coverage as the fraction of the target sequence (subject) covered by the query sequence
         my $coverage = 1;
         if (defined $use_coverage) {
             $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}]; 
         }
-        if ($data[ $fields{'evalue'}] == 0){
+        # get the p-value for the hit from the e-value.
+        my $e_value = $data[ $fields{'evalue'}];
+        my $p_value = 1 - e_constant**(-$e_value);
+        if ($p_value == 0){
+            # if p-value is equal 0 the log p-value is NA. then give the equivalane of a p-value of 1x10^-500.
+            # this number should be change later
             $S{ $data[ $fields{'query_id'}] }{ $seq_to_tax_db{$subject_id[1]} } += 500;
         } else {
-            next if ((-log ($data[ $fields{'evalue'}])) < 0); # to be removed when using p-value instead of e-value.
-            $S{ $data[ $fields{'query_id'}] }{ $seq_to_tax_db{$subject_id[1]} } += (-log ($data[ $fields{'evalue'}])) * $coverage;
+            # otherwise store the log of the p-value
+            $S{ $data[ $fields{'query_id'}] }{ $seq_to_tax_db{$subject_id[1]} } += (-log $p_value) * $coverage;
         }
+        # add this taxon to the list of taxons targeted by the querys.
         $target_taxons{$seq_to_tax_db{$subject_id[1]}} = "";
     }
 }
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
 
 # for easy operation store the score of each gene on each specie on a matrix. Later internal nodes of the tree will be added as additional columns, that will make calculation of scores for new columns (internal nodes) faster.
-# print score matrix;
 
+
+# define some data structures to hold the data.
 my $S_g_f = [];
 my %S_g_f_gene_idx = ();
 my %S_g_f_taxon_idx = ();
 my $gene_counter = 0;
 my $taxon_counter = 0;
 
+# generate an internal taxon id which we will use for matrix indexes.
 foreach my $spc (sort {$a cmp $b} keys %target_taxons){
     $S_g_f_taxon_idx{$spc} = $taxon_counter++;
 }
 
 while (my ($gene, $target_species) = each %S){
+    # generate a gene counter that will be used for matrix indexes.
     $S_g_f_gene_idx{$gene} = $gene_counter++;
+    # loop over the taxons targeted by all queries gene.
     foreach my $spc (sort {$a cmp $b} keys %target_taxons)  {
         if (not exists $target_species->{$spc}) { 
+            # if gene had not hit on this taxon then the score is 0
             $S_g_f->[ $S_g_f_gene_idx{$gene}  ] [ $S_g_f_taxon_idx{$spc} ] = 0;
         } else {
+            # otherwise the score is the sume of the log(p-values) of the hits on this taxon
             $S_g_f->[ $S_g_f_gene_idx{$gene}  ] [ $S_g_f_taxon_idx{$spc} ] = $target_species->{$spc};
         }
     }
 }
 
-# create matrix in PDL format
+# create matrix in PDL format to store the scores of each gene on each taxon.
 $S_g_f = mpdl $S_g_f;
 $S_g_f /=  $S_g_f->xchg(0,1)->sumover;
 
-# get taxon information for the query taxon.
+# get taxon information for the taxon of the query sequences.
 my $main_taxon = $db->get_taxon(-taxonid => $query_taxon);
 
-
-print_OUT("Starting to calculate PhyloStratum scores");
-print_OUT("Identifiying last common ancestors between [ " . $main_taxon->scientific_name . " ] and [ " . scalar (keys %target_taxons) . " ] target species");
+print_OUT("Starting to calculate PhyloStratum Scores");
+print_OUT("Identifiying last common ancestors between [ " . $main_taxon->scientific_name . " ] and [ " . scalar (keys %target_taxons) . " ] target taxons");
 
 # get target species and add the query specie
 my @species_names = map { $db->get_taxon(-taxonid => $_)->scientific_name;  } keys %target_taxons;
@@ -186,7 +206,7 @@ my %LCA = (); # this hash stores the the last-common ancestor between the query 
 
 # get the root of the tree
 my $tree_root = $tree->get_root_node;
-# loop over each of the tree leaves
+# loop over each of the tree leaves, i.e., taxons with blast hits
 foreach my $node_id (@{ return_all_Leaf_Descendents($tree_root) }){
     # skip if the leave is the taxon of interest
     next if ($node_id->id == $main_taxon->id);
@@ -234,12 +254,6 @@ for (my $i = 0; $i < scalar @path_to_taxon; $i++){
 }
 $I_g_f = pdl $I_g_f;
 my $S_f = $I_g_f->sumover; # here store the cummulative score for each stratum over all genes.
-
-print "I_g_f\n";
-print join " ",$I_g_f->dims;
-print "S_f\n";
-print $S_f;
-getc;
 
 print_OUT("Done");
 

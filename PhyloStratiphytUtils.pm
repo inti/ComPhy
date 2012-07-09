@@ -177,4 +177,7 @@ sub print_OUT {
 }
 
 
+# blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch list -db nr -out list_info.csv
+
+
 1;
