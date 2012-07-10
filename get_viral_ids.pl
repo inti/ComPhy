@@ -1,16 +1,49 @@
 #!/usr/bin/perl -w
 use strict;
+use Getopt::Long;
+use Pod::Usage;
 use Data::Dumper;
 use Bio::DB::Taxonomy;
 # local modules
 use PhyloStratiphytUtils;
 
-my $tax_folder = $ARGV[0];
 
-print_OUT("   '-> Reading phylogenetic tree and species information");
+our (   $help, $man, $tax_folder, $out, $tax_id);
+
+GetOptions(
+    'help' => \$help,
+    'man' => \$man,
+    'tax_folder=s' => \$tax_folder,
+    'out|o=s' => \$out,
+    'tax_id=i' => \$tax_id,
+) or pod2usage(0);
+
+pod2usage(0) if (defined $help);
+pod2usage(-exitstatus => 2, -verbose => 2) if (defined $man);
+
+defined $tax_id or $tax_id = 10239;
+
+print_OUT("Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
 my $db = Bio::DB::Taxonomy->new(-source => 'flatfile', -nodesfile => $nodesfile, -namesfile => $namefile);
+
+
+
+my $node = $db->get_Taxonomy_Node(-taxonid => $tax_id);
+
+print_OUT("Fetching extant taxa of tax id [ " . $node->id . " ] which is a [ " . $node->scientific_name . " ] of rank [ " . $node->rank . " ] ");
+# to only get children that are of a particular rank in the taxonomy test if their rank is 'species' for example
+
+my @extant_children = grep { $_->rank eq 'species' } $db->get_all_Descendents($node);
+print_OUT("Printing out");
+open (OUT,">$out") or die $!;
+for my $child ( @extant_children ) {
+    print OUT $child->ncbi_taxid,",",$child->id, ",", $child->rank, ",",$child->scientific_name, "\n";
+}
+close(OUT);
+exit;
+
 
 my $taxon= $db->get_taxon(10239);
 print_OUT("Starting to identify viral taxa");
@@ -25,9 +58,7 @@ do {
 	@taxons = @new_taxons;
 } until (scalar @taxons == 0);
 
-print_OUT("Printing out");
 
-open (OUT,">$ARGV[1]") or die $!;
 foreach my $tx (keys %all_viral_taxa){
 	print OUT $tx->id,"\t",$tx->scientific_name,"\n";
 }
