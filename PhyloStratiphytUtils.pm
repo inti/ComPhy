@@ -176,8 +176,62 @@ sub print_OUT {
 	}
 }
 
+sub fetch_tax_ids_from_blastdb {
+    my $seq_ids = shift;
+    print_OUT("Getting taxons ids for hit sequences");
+    print_OUT("   '-> Printing ids to temporary file");
+    my $tmp_file = "tmp.seq_tax_ids.$$";
+    open(IDS,">$tmp_file.txt") or die $!;
+    foreach my $id (@$seq_ids){ print IDS $id,"\n"; }
+    close(IDS);
+    print_OUT("   '-> Running blastdbcmd to get sequences information");
+    #`blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch $tmp_file.txt -db nr -out $tmp_file.csv`;
+    #open (TAX_IDS,"$tmp_file.csv") or die $!;
+    print_OUT("   '-> Parsing sequence information");
+    open (TAX_IDS,"gi_to_tax_id_from_blast.csv") or die $!;
+    my %back_gi_to_taxinfo = ();
+    my %target_taxons = ();
+    my $taxon_counter = 0;
+    my %seen_taxon = ();
+    while (my $line = <TAX_IDS>){
+        chomp($line);
+        my @data = split(/,/,$line);
+        $back_gi_to_taxinfo{$data[1]} = {'accession' => $data[0], 'gi' => $data[1],'taxid' => $data[2], 'common_tax_name' => $data[3],'scientific_name' => $data[4]};
+        push @{ $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'seqs'} }, $back_gi_to_taxinfo{$data[1]}->{'accession' };
+        if (not exists $seen_taxon{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} } ){
+            $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}} =  $taxon_counter++; 
+        }
+        $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'tax_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}};
+    }
+    unlink("$tmp_file.txt");
+    unlink("$tmp_file.csv");
+    print_OUT("   '-> Temorary files removed");
+    return(\%back_gi_to_taxinfo,\%target_taxons);
+}
 
-# blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch list -db nr -out list_info.csv
+sub get_tree_from_taxids {
+    my ($self, @species_ids) = @_;
+    
+    # the full lineages of the species are merged into a single tree
+    my $tree;
+    foreach my $ncbi_id (@species_ids) {
+        if ($ncbi_id) {
+            my $node = $self->get_taxon(-taxonid => $ncbi_id);
+            #$node->name('supplied', $name);
+            
+            if ($tree) {
+                $tree->merge_lineage($node);
+            } else {
+                $tree = Bio::Tree::Tree->new(-verbose => $self->verbose, -node => $node);
+            }
+        }
+        else {
+            $self->throw("No taxonomy database node for species ".$ncbi_id);
+        }
+    }
+    
+    return $tree;
+}
 
 
 1;
