@@ -188,13 +188,19 @@ my $tree_root = $tree->get_root_node;
 print_OUT("   '-> Finding LCAs");
 my %PATHS = ();
 my $taxon_counter = scalar (keys %$target_taxons);
+@{ $PATHS{$qry_node->id} }= reverse $tree->get_lineage_nodes($qry_node);
+foreach my $ancestor (@{ $PATHS{$qry_node->id} }){
+        if (not exists $target_taxons->{$ancestor} ){
+        	$target_taxons->{$ancestor->id}->{'tax_number'} = ++$taxon_counter;
+	}
+}
 
 foreach my $tree_leaf (keys %$target_taxons){
     # skip if the leave is the taxon of interest
     next if ($tree_leaf == $main_taxon->id);
     my $leaf_node = $tree->find_node($tree_leaf);
     # get LCA between leaf and query taxon
-    print $leaf_node->scientific_name," ",$leaf_node->id,"\n";
+    print $leaf_node->id,"\n";
     my $lca = $tree->get_lca(($leaf_node,$qry_node));
     # get the path to the root of the target taxon
     @{ $PATHS{$tree_leaf} }= reverse $tree->get_lineage_nodes($leaf_node);
@@ -207,6 +213,7 @@ foreach my $tree_leaf (keys %$target_taxons){
 }
 
 my $M = zeroes scalar (keys %S), scalar (keys %$target_taxons);
+print "Matrix Dimensions\n",join " ", $M->dims,"\n";
 my $gene_counter = 0;
 foreach my $qry_gene (keys %S){
     print $qry_gene,"\n";
@@ -220,6 +227,7 @@ foreach my $qry_gene (keys %S){
         }
         next if (scalar @taxon_idx == 0);        
         my $idx = pdl @taxon_idx;
+	print "\n",$idx;
         $M($idx,$gene_counter) += $hit->{'score'};
     }
     print $M($gene_counter);
