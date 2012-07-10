@@ -225,15 +225,17 @@ sub fetch_tax_ids_from_blastdb {
 }
 
 sub get_tree_from_taxids {
-    my ($self, @species_ids) = @_;
+    my $self = shift;
+    my $species_ids = shift;
     
     # the full lineages of the species are merged into a single tree
     my $tree;
-    foreach my $ncbi_id (@species_ids) {
+    my $spc_counter = 0;
+    my $n_spc = scalar @$species_ids;
+    foreach my $ncbi_id (@$species_ids) {
+        print scalar localtime,"\t",progress_bar(++$spc_counter,$n_spc);
         if ($ncbi_id) {
             my $node = $self->get_taxon(-taxonid => $ncbi_id);
-            #$node->name('supplied', $name);
-            
             if ($tree) {
                 $tree->merge_lineage($node);
             } else {
