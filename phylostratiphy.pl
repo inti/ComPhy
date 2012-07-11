@@ -17,7 +17,7 @@ use constant E_CONSTANT => log(10);
 
 use PhyloStratiphytUtils;
 
-our (   $help, $man, $tax_folder, $blast_out, $blast_format, $query_taxon,
+our (   $help, $man, $tax_folder, $blast_out, $blast_format, $query_taxon, $out,
         $nucl_only, $prot_only, $seq_to_gi, $tax_info, $use_coverage, $virus_list);
 
 GetOptions(
@@ -33,6 +33,7 @@ GetOptions(
     'use_coverage' => \$use_coverage,
     'query_taxon=s' => \$query_taxon,
     'virus_list=s' => \$virus_list,
+    'out|o=s' => \$out,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -215,14 +216,29 @@ foreach my $tree_leaf (keys %$target_taxons){
         if (not exists $target_taxons->{$ancestor->id} ){
             $target_taxons->{$ancestor->id}->{'tax_number'} = ++$taxon_counter;
         }
+        $target_taxons->{$ancestor->id}->{'scientific_name'} = $ancestor->scientific_name;
     }
+    $target_taxons->{$leaf_node->id}->{'scientific_name'} = $leaf_node->scientific_name;
 }
 
+
+print_OUT("Finishing to calculate scores");
+print_OUT("Printing results to [ $out ]");
+open(OUT,">$out") or die $!;
+# print colnames of output file
+my $output_header;
+foreach my $id (sort {$target_taxons->{$a}->{'tax_number'}  <=> $target_taxons->{$b}->{'tax_number'} } (keys %$target_taxons)){
+    $target_taxons->{$id}->{'scientific_name'} =~ s/ /__/g;
+    $output_header .= $target_taxons->{$id}->{'scientific_name'} . "\t";
+}
+chop($output_header);
+print OUT "$output_header\n";
+
 my $M = zeroes scalar (keys %S), scalar (keys %$target_taxons);
-print "Matrix Dimensions\n",join " ", $M->dims,"\n";
+
 my $gene_counter = 0;
+
 foreach my $qry_gene (keys %S){
-    print $qry_gene," $gene_counter\n";
     foreach my $hit (@{ $S{$qry_gene} }){
         next if (not exists $seq_to_tax_id->{$hit->{'subject_id'}});
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
@@ -234,106 +250,15 @@ foreach my $qry_gene (keys %S){
         }
         next if (scalar @taxon_idx == 0);        
         my $idx = pdl @taxon_idx;
-        #print "\n",$idx;
-        print "matrix positions ",$gene_counter,"\n",$idx,"\n";
         $M($gene_counter,$idx) += $hit->{'score'};
     }
-    print $M;
+    print OUT $qry_gene,"\t";
+    print OUT join "\t", $M($gene_counter,)->xchg(0,1)->list;
+    print OUT "\n";
     $gene_counter++;
 }
 
-print $M;
-getc;
-
-my %LCA = (); # this hash stores the the last-common ancestor between the query species and the target specie. This node represent oldest node to which the score of the species needs to be addedd.
-
-#while (my ($gene, $target_species) = each %S){
-#    # generate a gene counter that will be used for matrix indexes.
-#    $S_g_f_gene_idx{$gene} = $gene_counter++;
-#    # loop over the taxons targeted by all queries gene.
-#    foreach my $spc (sort {$a cmp $b} keys %target_taxons)  {
-#        if (not exists $target_species->{$spc}) { 
-#            # if gene had not hit on this taxon then the score is 0
-#            $S_g_f->[ $S_g_f_gene_idx{$gene}  ] [ $S_g_f_taxon_idx{$spc} ] = 0;
-#        } else {
-#            # otherwise the score is the sume of the log(p-values) of the hits on this taxon
-#            $S_g_f->[ $S_g_f_gene_idx{$gene}  ] [ $S_g_f_taxon_idx{$spc} ] = $target_species->{$spc};
-#        }
-#    }
-#}
-#
-## create matrix in PDL format to store the scores of each gene on each taxon.
-#$S_g_f = mpdl $S_g_f;
-#$S_g_f /=  $S_g_f->xchg(0,1)->sumover;
-#
-## get taxon information for the taxon of the query sequences.
-#my $main_taxon = $db->get_taxon(-taxonid => $query_taxon);
-#
-#print_OUT("Starting to calculate PhyloStratum Scores");
-#print_OUT("Identifiying last common ancestors between [ " . $main_taxon->scientific_name . " ] and [ " . scalar (keys %target_taxons) . " ] target taxons");
-#
-## get target species and add the query specie
-#my @species_names = map { $db->get_taxon(-taxonid => $_)->scientific_name;  } keys %target_taxons;
-## obtain a tree containing only the species of interest
-#my $tree = $db->get_tree((@species_names,$main_taxon->scientific_name));
-## remove redundant nodes, i.e., those with only one ancestor AND one descentdant.
-#$tree->contract_linear_paths;
-#
-## get the node for the taxon of interest
-#my $qry_node = $tree->find_node($main_taxon->id);
-#
-#my %LCA = (); # this hash stores the the last-common ancestor between the query species and the target specie. This node represent oldest node to which the score of the species needs to be addedd.
-#
-## get the root of the tree
-#my $tree_root = $tree->get_root_node;
-## loop over each of the tree leaves, i.e., taxons with blast hits
-#foreach my $node_id (@{ return_all_Leaf_Descendents($tree_root) }){
-#    # skip if the leave is the taxon of interest
-#    next if ($node_id->id == $main_taxon->id);
-#    # get the last common ancestor of the target and taxon of interest
-#    my $lca = $tree->get_lca(($node_id,$qry_node));
-#    $LCA{$lca->id} = $lca;
-#    # get the path to the root of the target taxon
-#    my @path = reverse $tree->get_lineage_nodes($node_id);
-#    # loop from the target taxon to the LCA and add the target taxon score to each ancestor
-#    foreach my $ancestor ( @path){
-#        if (exists $S_g_f_taxon_idx{$node_id->ancestor->id}){
-#            my $matrix_idx = $S_g_f_taxon_idx{$node_id->ancestor->id};
-#            $S_g_f(,$matrix_idx) += $S_g_f(,$matrix_idx);
-#        } else {
-#            # record its position on the matrix
-#            $S_g_f_taxon_idx{$node_id->ancestor->id} = $taxon_counter++;
-#            # create new column
-#            $S_g_f = $S_g_f->glue(1, $S_g_f(,$S_g_f_taxon_idx{$node_id->id}) );
-#        }
-#        last if ($ancestor->id == $lca->id);
-#    }
-#}
-#
-#
-#
-#my $last_recorded_lca = '';
-#
-#my @path_to_taxon = reverse $tree->get_lineage_nodes($main_taxon);
-#for (my $i = 0; $i < scalar @path_to_taxon; $i++){
-#    $last_recorded_lca = $i if (exists $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() });
-#    next if ($last_recorded_lca eq '');
-#    if (not exists $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() }){
-#        $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() } = $S_g_f_taxon_idx{ $path_to_taxon[ $last_recorded_lca ]->id };
-#    }
-#}
-#
-#my $I_g_f;
-#for (my $i = 0; $i < scalar @path_to_taxon; $i++){
-#    next if (not exists $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() });
-#    last if (not defined $path_to_taxon[$i]->ancestor);
-#    my $idx_current = $S_g_f_taxon_idx{ $path_to_taxon[$i]->id() };
-#    my $idx_previous = $S_g_f_taxon_idx{ $path_to_taxon[$i]->ancestor->id() };
-#    my $tmp_col = $S_g_f(,$idx_current) - $S_g_f(,$idx_previous);
-#    push @{ $I_g_f }, [$tmp_col->list];
-#}
-#$I_g_f = pdl $I_g_f;
-#my $S_f = $I_g_f->sumover; # here store the cummulative score for each stratum over all genes.
+close(OUT);
 
 print_OUT("Done");
 
