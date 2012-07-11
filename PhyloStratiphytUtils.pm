@@ -214,7 +214,8 @@ sub fetch_tax_ids_from_blastdb {
         $back_gi_to_taxinfo{$data[1]} = {'accession' => $data[0], 'gi' => $data[1],'taxid' => $data[2], 'common_tax_name' => $data[3],'scientific_name' => $data[4]};
         push @{ $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'seqs'} }, $back_gi_to_taxinfo{$data[1]}->{'accession' };
         if (not exists $seen_taxon{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} } ){
-            $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}} =  $taxon_counter++; 
+            $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}} =  $taxon_counter;
+            $taxon_counter++;
         }
         $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'tax_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}};
     }
