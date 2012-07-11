@@ -188,6 +188,7 @@ my $tree_root = $tree->get_root_node;
 print_OUT("   '-> Finding LCAs");
 my %PATHS = ();
 my $taxon_counter = scalar (keys %$target_taxons);
+# add nodes in lineafe of query node
 @{ $PATHS{$qry_node->id} }= reverse $tree->get_lineage_nodes($qry_node);
 foreach my $ancestor (@{ $PATHS{$qry_node->id} }){
         if (not exists $target_taxons->{$ancestor} ){
@@ -200,13 +201,13 @@ foreach my $tree_leaf (keys %$target_taxons){
     next if ($tree_leaf == $main_taxon->id);
     my $leaf_node = $tree->find_node($tree_leaf);
     # get LCA between leaf and query taxon
-    print $leaf_node->id,"\n";
+    print $tree_leaf,"\n";
     my $lca = $tree->get_lca(($leaf_node,$qry_node));
     # get the path to the root of the target taxon
-    @{ $PATHS{$tree_leaf} }= reverse $tree->get_lineage_nodes($leaf_node);
+    @{ $PATHS{ $tree_leaf} }= reverse $tree->get_lineage_nodes($leaf_node);
     # check that the taxons have a taxon id to use for the matrix operations later
     foreach my $ancestor (@{ $PATHS{$tree_leaf} }){
-        if (not exists $target_taxons->{$ancestor} ){
+        if (not exists $target_taxons->{$ancestor->id} ){
             $target_taxons->{$ancestor->id}->{'tax_number'} = ++$taxon_counter;
         }
     }
@@ -216,21 +217,22 @@ my $M = zeroes scalar (keys %S), scalar (keys %$target_taxons);
 print "Matrix Dimensions\n",join " ", $M->dims,"\n";
 my $gene_counter = 0;
 foreach my $qry_gene (keys %S){
-    print $qry_gene,"\n";
-    my @taxon_idx = ();
+    print $qry_gene," $gene_counter\n";
     foreach my $hit (@{ $S{$qry_gene} }){
         next if (not exists $seq_to_tax_id->{$hit->{'subject_id'}});
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
+        #print $hit->{'subject_id'}, " ",$subject_taxid, " ",$target_taxons->{ $subject_taxid }->{'tax_number'},"\n";
+        my @taxon_idx = ();
         push  @taxon_idx, $target_taxons->{ $subject_taxid }->{'tax_number'};
         foreach my $taxon (@{ $PATHS{$subject_taxid} }){ 
             push  @taxon_idx, $target_taxons->{ $taxon->id }->{'tax_number'}; 
         }
         next if (scalar @taxon_idx == 0);        
         my $idx = pdl @taxon_idx;
-	print "\n",$idx;
-        $M($idx,$gene_counter) += $hit->{'score'};
+        #print "\n",$idx;
+        $M($idx,) += $hit->{'score'};
     }
-    print $M($gene_counter);
+    print $M;
     $gene_counter++;
 }
 

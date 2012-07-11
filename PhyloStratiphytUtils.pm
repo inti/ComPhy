@@ -203,7 +203,7 @@ sub fetch_tax_ids_from_blastdb {
     #`blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch $tmp_file.txt -db nr -out $tmp_file.csv`;
     #open (TAX_IDS,"$tmp_file.csv") or die $!;
     print_OUT("   '-> Parsing sequence information");
-    open (TAX_IDS,"gi_to_tax_id_from_blast.csv_small") or die $!;
+    open (TAX_IDS,"gi_to_tax_id_from_blast.csv") or die $!;
     my %back_gi_to_taxinfo = ();
     my %target_taxons = ();
     my $taxon_counter = 0;
