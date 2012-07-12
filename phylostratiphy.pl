@@ -118,8 +118,8 @@ foreach my $file (@$blast_out){
                     $fs[$i] =~ s/\s+/_/g;
                     $fields{$fs[$i]} = $i;
                 }
+                $seq_counter++;
             }
-            $seq_counter++;
             next;
         }
         chomp($line);
@@ -147,6 +147,7 @@ foreach my $file (@$blast_out){
         $hits_gis{$subject_id[1]} = '';
     }
 }
+
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
 # for easy operation store the score of each gene on each specie on a matrix. Later internal nodes of the tree will be added as additional columns, that will make calculation of scores for new columns (internal nodes) faster.
 
@@ -256,19 +257,20 @@ print_OUT("Printing query taxan Phylostratum Scores results to [ $out.qry_node_p
 my $qry_node_ancestestors = pdl map { $target_taxons->{$_->id}->{'tax_number'};} @{ $PATHS{$qry_node->id} };
 
 print $M;
+getc;
 my @qry_ancestors_minus_root = $qry_node_ancestestors->list;
 shift @qry_ancestors_minus_root;
 for my $idx (@qry_ancestors_minus_root){
-    print $idx," ",$idx - 1,"\n";
     $M(,$idx) -= $M(,$idx-1);
 }
-print $M(1,$qry_node_ancestestors);
+print $M(,$qry_node_ancestestors);
 #print $M;
 my $gene_sums = $M->xchg(0,1)->sumover;
 for my $idx (list which($M->xchg(0,1)->sumover != 0)){
     $M($idx,$qry_node_ancestestors) /= $M($idx,$qry_node_ancestestors)->sum;
 }
-$M->inplace->setnantobad->setbadtoval(0);
+# replace nan to 0.
+$M->inplace->setnantobad->inplace->setbadtoval(0);
 
 print $M(1,$qry_node_ancestestors);
 
@@ -294,6 +296,7 @@ foreach my $id (sort {$target_taxons->{$a}->{'tax_number'}  <=> $target_taxons->
 }
 chop($output_header);
 print OUT "$output_header\n";
+my $gene_counter = 0;
 foreach my $qry_gene (keys %S){
     print OUT $qry_gene,"\t";
     print OUT join "\t", $M($gene_counter,)->xchg(0,1)->list;
