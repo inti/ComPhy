@@ -7,5 +7,6 @@ my_perl phylostratiphy.pl \
     -tax_folder data2/ \
     -prot_only \
     -query_taxon 103372 \
-    -virus_list tmp.virus.txt
+    -virus_list tmp.virus.txt \
+    -out test_phylostratiphy
 

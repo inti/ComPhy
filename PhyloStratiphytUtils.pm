@@ -169,6 +169,7 @@ sub progress_bar {
     sprintf "   |%-${width}s| Done with [ %${num_width}s ] of [ %s (%.2f%%) ]\r", 
     $char x (($width-1)*$got/$total). '>', 
     $got, $total, 100*$got/+$total;
+    #print "\n" if ($got == $total);
 }
 
 

@@ -182,7 +182,7 @@ my $tree = get_tree_from_taxids($db,[$main_taxon->id,keys %$target_taxons]);
 $tree->contract_linear_paths;
 
 # get the node for the taxon of interest
-my $qry_node = $tree->find_node($main_taxon->id);
+my $qry_node = $tree->find_node(-id => $main_taxon->id);
 # get the root of the tree
 my $tree_root = $tree->get_root_node;
 
@@ -195,13 +195,15 @@ my $taxon_counter = (scalar (keys %$target_taxons) ) - 1;
 foreach my $ancestor (@{ $PATHS{$qry_node->id} }){
     if (not exists $target_taxons->{$ancestor} ){
         $target_taxons->{$ancestor->id}->{'tax_number'} = ++$taxon_counter;
+        $target_taxons->{$ancestor->id}->{'scientific_name'} = $ancestor->scientific_name;
 	}
+    $target_taxons->{$ancestor->id}->{'scientific_name'} = $ancestor->scientific_name;
 }   
 
 foreach my $tree_leaf (keys %$target_taxons){
     # skip if the leave is the taxon of interest
     next if ($tree_leaf == $main_taxon->id);
-    my $leaf_node = $tree->find_node($tree_leaf);
+    my $leaf_node = $tree->find_node(-id => $tree_leaf);
     if (not defined $leaf_node){
         print_OUT("Taxon not found for [ $tree_leaf ]");
         next;
@@ -223,16 +225,6 @@ foreach my $tree_leaf (keys %$target_taxons){
 
 
 print_OUT("Finishing to calculate scores");
-print_OUT("Printing results to [ $out ]");
-open(OUT,">$out") or die $!;
-# print colnames of output file
-my $output_header;
-foreach my $id (sort {$target_taxons->{$a}->{'tax_number'}  <=> $target_taxons->{$b}->{'tax_number'} } (keys %$target_taxons)){
-    $target_taxons->{$id}->{'scientific_name'} =~ s/ /__/g;
-    $output_header .= $target_taxons->{$id}->{'scientific_name'} . "\t";
-}
-chop($output_header);
-print OUT "$output_header\n";
 
 my $M = zeroes scalar (keys %S), scalar (keys %$target_taxons);
 
@@ -252,13 +244,64 @@ foreach my $qry_gene (keys %S){
         my $idx = pdl @taxon_idx;
         $M($gene_counter,$idx) += $hit->{'score'};
     }
+    $gene_counter++;
+}
+
+close(OUT);
+
+# nomalize the scores.  
+
+print_OUT("Printing query taxan Phylostratum Scores results to [ $out.qry_node_phylostratumscores.txt ]");
+# get the phylostratum scores for the query node.
+my $qry_node_ancestestors = pdl map { $target_taxons->{$_->id}->{'tax_number'};} @{ $PATHS{$qry_node->id} };
+
+print $M;
+my @qry_ancestors_minus_root = $qry_node_ancestestors->list;
+shift @qry_ancestors_minus_root;
+for my $idx (@qry_ancestors_minus_root){
+    print $idx," ",$idx - 1,"\n";
+    $M(,$idx) -= $M(,$idx-1);
+}
+print $M(1,$qry_node_ancestestors);
+#print $M;
+my $gene_sums = $M->xchg(0,1)->sumover;
+for my $idx (list which($M->xchg(0,1)->sumover != 0)){
+    $M($idx,$qry_node_ancestestors) /= $M($idx,$qry_node_ancestestors)->sum;
+}
+$M->inplace->setnantobad->setbadtoval(0);
+
+print $M(1,$qry_node_ancestestors);
+
+my $qry_node_PhylostratumScores = $M(,$qry_node_ancestestors)->sumover;
+
+print $qry_node_PhylostratumScores;
+
+open(OUT,">$out.qry_node_phylostratumscores.txt") or die $!;
+print OUT join "\t", map { $target_taxons->{$_->id}->{'scientific_name'};} @{ $PATHS{$qry_node->id} };
+print OUT "\n";
+print OUT join "\t", $M(,$qry_node_ancestestors)->sumover->list;
+print OUT "\n";
+close(OUT);
+
+
+print_OUT("Printing results to [ $out.txt ]");
+open(OUT,">$out.txt") or die $!;
+# print colnames of output file
+my $output_header;
+foreach my $id (sort {$target_taxons->{$a}->{'tax_number'}  <=> $target_taxons->{$b}->{'tax_number'} } (keys %$target_taxons)){
+    $target_taxons->{$id}->{'scientific_name'} =~ s/ /__/g;
+    $output_header .= $target_taxons->{$id}->{'scientific_name'} . "\t";
+}
+chop($output_header);
+print OUT "$output_header\n";
+foreach my $qry_gene (keys %S){
     print OUT $qry_gene,"\t";
     print OUT join "\t", $M($gene_counter,)->xchg(0,1)->list;
     print OUT "\n";
     $gene_counter++;
 }
-
 close(OUT);
+
 
 print_OUT("Done");
 
