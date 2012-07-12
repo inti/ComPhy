@@ -3,10 +3,9 @@
 # run test of script.
 
 my_perl phylostratiphy.pl \
-    -blast blastp__Aech_v3.8.pep__nr.e10.sw.txt_old \
-    -tax_folder data2/ \
+    -blast dysbindin.blast_out.txt \ #blastp__Aech_v3.8.pep__nr.e10.sw.txt_old \
+    -tax_folder data/ \
     -prot_only \
-    -query_taxon 103372 \
+    -query_taxon 9606 \ #103372 \
     -virus_list tmp.virus.txt \
     -out test_phylostratiphy
-
