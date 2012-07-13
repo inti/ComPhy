@@ -95,7 +95,7 @@ $seq_to_tax_db{"322792145"} = 13686; # this is to be removed
 my %target_taxons = ();
 my $seq_counter = 0;
 my %hits_gis = (); # store the gis of the hits
-
+my %largest_hit_values = ('score' => -1, 'e_value' => 10000, 'p_value' => 1 );
 # loop over blast results.
 # for each hit we will store the log(p-value) of the blast hit for each taxon of the tartget sequence.
 foreach my $file (@$blast_out){
@@ -144,9 +144,15 @@ foreach my $file (@$blast_out){
         $p_value = pdl $e_value if ($p_value == 0);
         my $score = -1*($p_value->log) * $coverage;
         push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[1], 'score' => $score, 'p_value' => $p_value, 'e_value' => $e_value };
+        if ($e_value > 0 and $score >  $largest_hit_values{'score'}){
+            %largest_hit_values = ('score' => $score->list, 'e_value' => $e_value->list, 'p_value' => $p_value->list );
+        }
         $hits_gis{$subject_id[1]} = '';
     }
 }
+
+# check of entries equal to infinite. this happens when the e-value is equal to 0.
+# on this cases we will replace the inf for the largest score available and its corresponding e-value. 
 
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
 # for easy operation store the score of each gene on each specie on a matrix. Later internal nodes of the tree will be added as additional columns, that will make calculation of scores for new columns (internal nodes) faster.
@@ -195,7 +201,7 @@ my $taxon_counter = (scalar (keys %$target_taxons) ) - 1;
 @{ $PATHS{$qry_node->id} }= reverse $tree->get_lineage_nodes($qry_node);
 foreach my $ancestor (@{ $PATHS{$qry_node->id} }){
     if (not exists $target_taxons->{$ancestor} ){
-        $target_taxons->{$ancestor->id}->{'tax_number'} = ++$taxon_counter;
+        $target_taxons->{$ancestor->id}->{'matrix_number'} = ++$taxon_counter;
         $target_taxons->{$ancestor->id}->{'scientific_name'} = $ancestor->scientific_name;
 	}
     $target_taxons->{$ancestor->id}->{'scientific_name'} = $ancestor->scientific_name;
@@ -217,7 +223,7 @@ foreach my $tree_leaf (keys %$target_taxons){
     # check that the taxons have a taxon id to use for the matrix operations later
     foreach my $ancestor (@{ $PATHS{$tree_leaf} }){
         if (not exists $target_taxons->{$ancestor->id} ){
-            $target_taxons->{$ancestor->id}->{'tax_number'} = ++$taxon_counter;
+            $target_taxons->{$ancestor->id}->{'matrix_number'} = ++$taxon_counter;
         }
         $target_taxons->{$ancestor->id}->{'scientific_name'} = $ancestor->scientific_name;
     }
@@ -230,53 +236,57 @@ print_OUT("Finishing to calculate scores");
 my $M = zeroes scalar (keys %S), scalar (keys %$target_taxons);
 
 my $gene_counter = 0;
-
 foreach my $qry_gene (keys %S){
     foreach my $hit (@{ $S{$qry_gene} }){
         next if (not exists $seq_to_tax_id->{$hit->{'subject_id'}});
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
-        #print $hit->{'subject_id'}, " ",$subject_taxid, " ",$target_taxons->{ $subject_taxid }->{'tax_number'},"\n";
+        #print $hit->{'subject_id'}, " ",$subject_taxid, " ",$target_taxons->{ $subject_taxid }->{'matrix_number'},"\n";
         my @taxon_idx = ();
-        push  @taxon_idx, $target_taxons->{ $subject_taxid }->{'tax_number'};
+        push  @taxon_idx, $target_taxons->{ $subject_taxid }->{'matrix_number'};
         foreach my $taxon (@{ $PATHS{$subject_taxid} }){ 
-            push  @taxon_idx, $target_taxons->{ $taxon->id }->{'tax_number'}; 
+            push  @taxon_idx, $target_taxons->{ $taxon->id }->{'matrix_number'}; 
         }
         next if (scalar @taxon_idx == 0);        
         my $idx = pdl @taxon_idx;
-        $M($gene_counter,$idx) += $hit->{'score'};
+        if ($hit->{'score'} eq "inf"){
+            $M($gene_counter,$idx) += $largest_hit_values{'score'};
+        } else {
+            $M($gene_counter,$idx) += $hit->{'score'};
+        }
     }
     $gene_counter++;
 }
 
 close(OUT);
-
 # nomalize the scores.  
 
 print_OUT("Printing query taxan Phylostratum Scores results to [ $out.qry_node_phylostratumscores.txt ]");
 # get the phylostratum scores for the query node.
-my $qry_node_ancestestors = pdl map { $target_taxons->{$_->id}->{'tax_number'};} @{ $PATHS{$qry_node->id} };
+my $qry_node_ancestestors = pdl map { $target_taxons->{$_->id}->{'matrix_number'};} @{ $PATHS{$qry_node->id} };
 
-print $M;
-getc;
-my @qry_ancestors_minus_root = $qry_node_ancestestors->list;
-shift @qry_ancestors_minus_root;
-for my $idx (@qry_ancestors_minus_root){
-    $M(,$idx) -= $M(,$idx-1);
+# get taxon objects for the ancestors
+my @qry_ancestors_array =  @{ $PATHS{$qry_node->id}};
+
+for (my $idx = 1; $idx  < scalar @qry_ancestors_array; $idx++){
+    my $present_taxa  = (@qry_ancestors_array)[$idx - 1];
+    my $previous_taxa = (@qry_ancestors_array)[$idx];
+    my $present_idx  = $target_taxons->{$present_taxa->id}->{'matrix_number'};
+    my $previous_idx = $target_taxons->{$previous_taxa->id}->{'matrix_number'};
+    $M(,$present_idx) -= $M(,$previous_idx);
 }
-print $M(,$qry_node_ancestestors);
-#print $M;
+
 my $gene_sums = $M->xchg(0,1)->sumover;
-for my $idx (list which($M->xchg(0,1)->sumover != 0)){
+for my $idx ( 0 .. scalar (keys %S) - 1){
+    my $min_score = $M($idx,$qry_node_ancestestors)->min;
+    if ($min_score < 0){
+        $M($idx,$qry_node_ancestestors) -= $M($idx,$qry_node_ancestestors)->min;
+    }
     $M($idx,$qry_node_ancestestors) /= $M($idx,$qry_node_ancestestors)->sum;
 }
+
 # replace nan to 0.
 $M->inplace->setnantobad->inplace->setbadtoval(0);
-
-print $M(1,$qry_node_ancestestors);
-
 my $qry_node_PhylostratumScores = $M(,$qry_node_ancestestors)->sumover;
-
-print $qry_node_PhylostratumScores;
 
 open(OUT,">$out.qry_node_phylostratumscores.txt") or die $!;
 print OUT join "\t", map { $target_taxons->{$_->id}->{'scientific_name'};} @{ $PATHS{$qry_node->id} };
@@ -289,17 +299,13 @@ close(OUT);
 print_OUT("Printing results to [ $out.txt ]");
 open(OUT,">$out.txt") or die $!;
 # print colnames of output file
-my $output_header;
-foreach my $id (sort {$target_taxons->{$a}->{'tax_number'}  <=> $target_taxons->{$b}->{'tax_number'} } (keys %$target_taxons)){
-    $target_taxons->{$id}->{'scientific_name'} =~ s/ /__/g;
-    $output_header .= $target_taxons->{$id}->{'scientific_name'} . "\t";
-}
-chop($output_header);
-print OUT "$output_header\n";
+
+print OUT join "\t", map { $target_taxons->{$_->id}->{'scientific_name'};} @{ $PATHS{$qry_node->id} };
+print "\n";
 my $gene_counter = 0;
 foreach my $qry_gene (keys %S){
     print OUT $qry_gene,"\t";
-    print OUT join "\t", $M($gene_counter,)->xchg(0,1)->list;
+    print OUT join "\t", $M($gene_counter,$qry_node_ancestestors)->xchg(0,1)->list;
     print OUT "\n";
     $gene_counter++;
 }

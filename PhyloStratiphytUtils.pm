@@ -205,7 +205,7 @@ sub fetch_tax_ids_from_blastdb {
     #open (TAX_IDS,"$tmp_file.csv") or die $!;
     print_OUT("   '-> Parsing sequence information");
     #    open (TAX_IDS,"gi_to_tax_id_from_blast.csv") or die $!;
-    open (TAX_IDS,"dysbindin.tax_info.csv") or die $!;
+    open (TAX_IDS,"gi_to_tax_id_from_blast.csv") or die $!; # dysbindin.tax_info.csv
     my %back_gi_to_taxinfo = ();
     my %target_taxons = ();
     my $taxon_counter = 0;
@@ -219,7 +219,7 @@ sub fetch_tax_ids_from_blastdb {
             $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}} =  $taxon_counter;
             $taxon_counter++;
         }
-        $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'tax_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}};
+        $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'matrix_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}};
     }
     unlink("$tmp_file.txt");
     unlink("$tmp_file.csv");
