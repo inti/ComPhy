@@ -55,28 +55,6 @@ if ($nucl_only) {
 }
 print_OUT("Mapping sequence ids to taxonomy ids");
 
-# load sequence to gene-id (gi) mappings
-my (%seq_to_tax_db,%tax_info_db,%tax_tree_db);
-#if (defined $tax_folder){
-#    if (not -e "$tax_folder/$seq_to_gi.db") {
-#        print_OUT("Moving into [ $tax_folder ] to create db");
-#        chdir($tax_folder);
-#        unlink("$seq_to_gi.db");
-#        %seq_to_tax_db  = build_database($seq_to_gi,$tax_folder,$seq_id_files);   
-#        chdir("../");
-#    }
-#    print_OUT("Openning databases");
-#    print_OUT("   '-> [ $tax_folder/$seq_to_gi.db ]");
-#    tie %seq_to_tax_db, "DB_File", "$tax_folder/$seq_to_gi.db" or die "Cannot open db file [ $tax_folder/$seq_to_gi.db ]: $!\n";
-#    
-#} else {
-#    print_OUT("Taxonomy information will downloaded and stored on folder [ data ]");
-#    $tax_folder = "data";
-#    unless (-d $tax_folder){ mkdir($tax_folder);}
-#    chdir($tax_folder);
-#    %seq_to_tax_db  = build_database($seq_to_gi,$tax_folder,$seq_id_files);   
-#    chdir("../");
-#}
 
 # load tree of life information, both node' connections and names of nodes.
 print_OUT("   '-> Reading phylogenetic tree and species information");
@@ -90,7 +68,6 @@ my $db = Bio::DB::Taxonomy->new(-source => 'flatfile', -nodesfile => $nodesfile,
 my %S = (); # hash will store to score for each species.
 
 print_OUT("Starting to parse blast output");
-$seq_to_tax_db{"322792145"} = 13686; # this is to be removed 
 
 my %target_taxons = ();
 my $seq_counter = 0;
@@ -130,8 +107,6 @@ foreach my $file (@$blast_out){
         }
         # extract the indetifiers of the target sequence
         my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
-        #next if (not exists $seq_to_tax_db{$subject_id[1]} ); # to be removed later
-        #next if (not defined $db->get_taxon(-taxonid => $seq_to_tax_db{$subject_id[1]})); # to avoid crash later when recovering the taxon objects.
         # define coverage as the fraction of the target sequence (subject) covered by the query sequence
         my $coverage = 1;
         if (defined $use_coverage) {
@@ -172,11 +147,6 @@ if (defined $virus_list){
 }
 
 
-# define some data structures to hold the data.
-my $S_g_f = [];
-my %S_g_f_gene_idx = ();
-my %S_g_f_taxon_idx = (); # to be removed.
-
 # get taxon information for the taxon of the query sequences.
 my $main_taxon = $db->get_taxon(-taxonid => $query_taxon);
 
@@ -215,7 +185,6 @@ foreach my $tree_leaf (keys %$target_taxons){
         print_OUT("Taxon not found for [ $tree_leaf ]");
         next;
     }
-    #print $tree_leaf,"\t", $leaf_node,"\t",ref($leaf_node),"\n";
     # get LCA between leaf and query taxon
     my $lca = $tree->get_lca(($leaf_node,$qry_node));
     # get the path to the root of the target taxon
@@ -240,7 +209,6 @@ foreach my $qry_gene (keys %S){
     foreach my $hit (@{ $S{$qry_gene} }){
         next if (not exists $seq_to_tax_id->{$hit->{'subject_id'}});
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
-        #print $hit->{'subject_id'}, " ",$subject_taxid, " ",$target_taxons->{ $subject_taxid }->{'matrix_number'},"\n";
         my @taxon_idx = ();
         push  @taxon_idx, $target_taxons->{ $subject_taxid }->{'matrix_number'};
         foreach my $taxon (@{ $PATHS{$subject_taxid} }){ 
@@ -275,7 +243,6 @@ for (my $idx = 1; $idx  < scalar @qry_ancestors_array; $idx++){
     $M(,$present_idx) -= $M(,$previous_idx);
 }
 
-my $gene_sums = $M->xchg(0,1)->sumover;
 for my $idx ( 0 .. scalar (keys %S) - 1){
     my $min_score = $M($idx,$qry_node_ancestestors)->min;
     if ($min_score < 0){
@@ -302,7 +269,7 @@ open(OUT,">$out.txt") or die $!;
 
 print OUT join "\t", map { $target_taxons->{$_->id}->{'scientific_name'};} @{ $PATHS{$qry_node->id} };
 print "\n";
-my $gene_counter = 0;
+$gene_counter = 0;
 foreach my $qry_gene (keys %S){
     print OUT $qry_gene,"\t";
     print OUT join "\t", $M($gene_counter,$qry_node_ancestestors)->xchg(0,1)->list;
