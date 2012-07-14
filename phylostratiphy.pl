@@ -18,7 +18,7 @@ use constant E_CONSTANT => log(10);
 use PhyloStratiphytUtils;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $query_taxon, $out,
-        $nucl_only, $prot_only, $seq_to_gi, $tax_info, $use_coverage, $virus_list);
+        $use_coverage, $virus_list, $hard_threshold);
 
 GetOptions(
     'help' => \$help,
@@ -26,33 +26,18 @@ GetOptions(
     'blast=s@' => \$blast_out,
     'tax_folder=s' => \$tax_folder,
     'blast_format=s' => \$blast_format,
-    'nucl_only' => \$nucl_only,
-    'prot_only' => \$prot_only,
-    'seq_to_gi=s' => \$seq_to_gi,
-    'tax_info=s' => \$tax_info,
     'use_coverage' => \$use_coverage,
     'query_taxon=s' => \$query_taxon,
     'virus_list=s' => \$virus_list,
     'out|o=s' => \$out,
+    'hard_threshold|hard=f' => \$hard_threshold,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
 pod2usage(-exitstatus => 2, -verbose => 2) if (defined $man);
 
-$seq_to_gi ||= "seq_to_gi";
-$tax_info ||= "tax_info";
-
 print_OUT("Parsing taxonomy information");
 
-# define the ids presents of the taxo-to-id mapping files
-my $seq_id_files = 'both';
-if ($nucl_only) {
-    $seq_id_files = "nucl";
-    print_OUT("Only working with protein sequences");
-} elsif ($prot_only) {
-    $seq_id_files = "prot";        
-    print_OUT("Only working with nucleic acid sequences");
-}
 print_OUT("Mapping sequence ids to taxonomy ids");
 
 
@@ -111,6 +96,10 @@ foreach my $file (@$blast_out){
         my $coverage = 1;
         if (defined $use_coverage) {
             $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}]; 
+        }
+        # if using hard threshold then remove hits by e-value
+        if (defined $hard_threshold){
+            next if ($data[ $fields{'evalue'}] > $hard_threshold);
         }
         # get the p-value for the hit from the e-value.
         my $e_value = pdl $data[ $fields{'evalue'}];
@@ -226,7 +215,13 @@ foreach my $qry_gene (keys %S){
 }
 
 close(OUT);
-# nomalize the scores.  
+# if using hard threshold then scores have to be [0,1] as presence or absence of the gene.
+if (defined $hard_threshold){
+    $M /=$M;
+    $M->inplace->setnantobad->inplace->setbadtoval(0);
+    print $M;
+}
+
 
 print_OUT("Printing query taxan Phylostratum Scores results to [ $out.qry_node_phylostratumscores.txt ]");
 # get the phylostratum scores for the query node.
@@ -243,12 +238,14 @@ for (my $idx = 1; $idx  < scalar @qry_ancestors_array; $idx++){
     $M(,$present_idx) -= $M(,$previous_idx);
 }
 
-for my $idx ( 0 .. scalar (keys %S) - 1){
-    my $min_score = $M($idx,$qry_node_ancestestors)->min;
-    if ($min_score < 0){
-        $M($idx,$qry_node_ancestestors) -= $M($idx,$qry_node_ancestestors)->min;
+unless (defined $hard_threshold){
+    for my $idx ( 0 .. scalar (keys %S) - 1){
+        my $min_score = $M($idx,$qry_node_ancestestors)->min;
+        if ($min_score < 0){
+            $M($idx,$qry_node_ancestestors) -= $M($idx,$qry_node_ancestestors)->min;
+        }
+        $M($idx,$qry_node_ancestestors) /= $M($idx,$qry_node_ancestestors)->sum;
     }
-    $M($idx,$qry_node_ancestestors) /= $M($idx,$qry_node_ancestestors)->sum;
 }
 
 # replace nan to 0.
@@ -268,7 +265,7 @@ open(OUT,">$out.txt") or die $!;
 # print colnames of output file
 
 print OUT join "\t", map { $target_taxons->{$_->id}->{'scientific_name'};} @{ $PATHS{$qry_node->id} };
-print "\n";
+print OUT "\n";
 $gene_counter = 0;
 foreach my $qry_gene (keys %S){
     print OUT $qry_gene,"\t";
