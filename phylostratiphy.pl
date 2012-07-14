@@ -214,7 +214,6 @@ foreach my $qry_gene (keys %S){
     $gene_counter++;
 }
 
-close(OUT);
 # if using hard threshold then scores have to be [0,1] as presence or absence of the gene.
 if (defined $hard_threshold){
     $M /=$M;
