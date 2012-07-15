@@ -217,29 +217,6 @@ print_OUT("Printing query taxan Phylostratum Scores results to [ $out.qry_node_p
 # normalise the scores by the sum of their logs, i.e., product of their probabilities.
 $M /=$M->xchg(0,1)->sumover unless (defined $hard_threshold); # do not do it if using hard_threshold because the matrix has a single entry per gene equal to 1.
 
-foreach my $taxon_id ( sort { $qry_ancestors{$b}->{'matrix_number'} <=> $qry_ancestors{$a}->{'matrix_number'} }  keys %qry_ancestors) { # loop is going from root to tip.
-#    print $taxon_id," ",$qry_ancestors{$taxon_id}->{"matrix_number"}," ",$qry_ancestors{$taxon_id}->{"scientific_name"},"\n";
-    my $this_pos = $qry_ancestors{$taxon_id}->{"matrix_number"};
-    my $previous_pos = $this_pos - 1;
-    next if ($this_pos == scalar (keys %qry_ancestors)); # skip if it is the root.
-    $M(,$this_pos) -= $M(,$previous_pos);
-}
-
-print $M;
-
-unless (defined $hard_threshold){
-    for my $idx ( 0 .. scalar (keys %S) - 1){
-        my $min_score = $M($idx,)->min;
-        if ($min_score < 0){
-            $M($idx,) -= $M($idx,)->min;
-        }
-        $M($idx,) /= $M($idx,)->sum;
-    }
-}
-
-# replace nan to 0.
-$M->inplace->setnantobad->inplace->setbadtoval(0);
-
 print $M;
 
 my $qry_node_PhylostratumScores = $M->sumover;
