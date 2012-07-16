@@ -119,12 +119,10 @@ foreach my $file (@$blast_out){
 # on this cases we will replace the inf for the largest score available and its corresponding e-value. 
 
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
-# for easy operation store the score of each gene on each specie on a matrix. Later internal nodes of the tree will be added as additional columns, that will make calculation of scores for new columns (internal nodes) faster.
-
 
 my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis] );
 
-
+## remove hits to unwanted taxons
 if (defined $virus_list){
     print_OUT("Parsing list of viral taxa to exclude");
     open(VL,$virus_list) or die $!;
@@ -153,109 +151,82 @@ my $qry_node = $tree->find_node(-id => $main_taxon->id);
 my $tree_root = $tree->get_root_node;
 
 print_OUT("   '-> Finding LCAs");
-my %PATHS = ();
 # tax counter is number of taxon minus 1 because the taxon counter starts from 0;
 my $taxon_counter = (scalar (keys %$target_taxons) ) - 1;
-# add nodes in lineafe of query node
-@{ $PATHS{$qry_node->id} }= reverse $tree->get_lineage_nodes($qry_node);
-foreach my $ancestor (@{ $PATHS{$qry_node->id} }){
-    if (not exists $target_taxons->{$ancestor} ){
-        $target_taxons->{$ancestor->id}->{'matrix_number'} = ++$taxon_counter;
-        $target_taxons->{$ancestor->id}->{'scientific_name'} = $ancestor->scientific_name;
-	}
-    $target_taxons->{$ancestor->id}->{'scientific_name'} = $ancestor->scientific_name;
-}   
-
-foreach my $tree_leaf (keys %$target_taxons){
-    # skip if the leave is the taxon of interest
-    next if ($tree_leaf == $main_taxon->id);
-    my $leaf_node = $tree->find_node(-id => $tree_leaf);
-    if (not defined $leaf_node){
-        print_OUT("Taxon not found for [ $tree_leaf ]");
-        next;
-    }
-    # get LCA between leaf and query taxon
-    my $lca = $tree->get_lca(($leaf_node,$qry_node));
-    # get the path to the root of the target taxon
-    @{ $PATHS{ $tree_leaf} }= reverse $tree->get_lineage_nodes($leaf_node);
-    # check that the taxons have a taxon id to use for the matrix operations later
-    foreach my $ancestor (@{ $PATHS{$tree_leaf} }){
-        if (not exists $target_taxons->{$ancestor->id} ){
-            $target_taxons->{$ancestor->id}->{'matrix_number'} = ++$taxon_counter;
-        }
-        $target_taxons->{$ancestor->id}->{'scientific_name'} = $ancestor->scientific_name;
-    }
-    $target_taxons->{$leaf_node->id}->{'scientific_name'} = $leaf_node->scientific_name;
+my %qry_ancestors = (); 
+my $matrix_number = 0;
+foreach my $taxon ( reverse $tree->get_lineage_nodes($qry_node) ){
+    # here matrix numbers increase from tip to root of tree.
+    $qry_ancestors{ $taxon->id } = { 'taxon' => $taxon, 'matrix_number' => $matrix_number++, 'scientific_name' => $taxon->scientific_name };
 }
-
 
 print_OUT("Finishing to calculate scores");
 
-my $M = zeroes scalar (keys %S), scalar (keys %$target_taxons);
+my $M = zeroes scalar (keys %S), scalar (keys %qry_ancestors);
 
+# here store the lca between qry and target taxons.
+my %LCA = ();
+my %NODES = ();
 my $gene_counter = 0;
 foreach my $qry_gene (keys %S){
+    my $oldest_lca_matrix_pos = -1;
     foreach my $hit (@{ $S{$qry_gene} }){
-        next if (not exists $seq_to_tax_id->{$hit->{'subject_id'}});
+        # skip if info about the hits was not recovered from the sequence db
+        next if (not exists $seq_to_tax_id->{ $hit->{'subject_id'} } );
+        # get some info about the target taxon and the sequence
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
-        my @taxon_idx = ();
-        push  @taxon_idx, $target_taxons->{ $subject_taxid }->{'matrix_number'};
-        foreach my $taxon (@{ $PATHS{$subject_taxid} }){ 
-            push  @taxon_idx, $target_taxons->{ $taxon->id }->{'matrix_number'}; 
+        my $subject_gi = $seq_to_tax_id->{$hit->{'subject_id'}}->{'gi'};
+        # next if hits is with qry taxon.
+        next if ( $subject_taxid == $main_taxon->id);
+        if (not exists $NODES{ $subject_taxid } ){ 
+            # get the node for the target taxon from the tree
+            my $subject_node = $tree->find_node(-id => $subject_taxid);
+            if ( not defined $subject_node ){
+                print_OUT("Taxon not found for [ $subject_taxid ]");
+                next;
+            }
+            # get LCA between leaf and query taxon.
+            my $lca = $tree->get_lca( ($subject_node,$qry_node) );
+            # next if we did not find a lca.
+            next if (not defined $lca);
+            $LCA{ $subject_node->id } = $lca;
+            $NODES{ $subject_taxid } = $subject_node;
         }
-        next if (scalar @taxon_idx == 0);        
-        my $idx = pdl @taxon_idx;
-        if ($hit->{'score'} eq "inf"){
-            $M($gene_counter,$idx) += $largest_hit_values{'score'};
+        my $subject_node = $NODES{ $subject_taxid };
+        my $lca_matrix_pos = $qry_ancestors{ $LCA{ $subject_node->id }->id }->{'matrix_number'} ; 
+        next if (not defined $lca_matrix_pos);
+        if (defined $hard_threshold) {
+            $oldest_lca_matrix_pos = $lca_matrix_pos if ($oldest_lca_matrix_pos < $lca_matrix_pos); # record the oldest LCA of the hits of this gene.
         } else {
-            $M($gene_counter,$idx) += $hit->{'score'};
+            if ($hit->{'score'} eq "inf"){
+                $M($gene_counter,$lca_matrix_pos) += $largest_hit_values{'score'};
+            } else {
+                $M($gene_counter,$lca_matrix_pos) += $hit->{'score'};
+            }
         }
+    }
+    # score as 1 the oldest LCA of this gene.
+    if (defined $hard_threshold){
+        next if ($oldest_lca_matrix_pos == -1);
+        $M($gene_counter,$oldest_lca_matrix_pos) .= 1;
     }
     $gene_counter++;
 }
 
-close(OUT);
-# if using hard threshold then scores have to be [0,1] as presence or absence of the gene.
-if (defined $hard_threshold){
-    $M /=$M;
-    $M->inplace->setnantobad->inplace->setbadtoval(0);
-    print $M;
-}
-
-
 print_OUT("Printing query taxan Phylostratum Scores results to [ $out.qry_node_phylostratumscores.txt ]");
-# get the phylostratum scores for the query node.
-my $qry_node_ancestestors = pdl map { $target_taxons->{$_->id}->{'matrix_number'};} @{ $PATHS{$qry_node->id} };
 
-# get taxon objects for the ancestors
-my @qry_ancestors_array =  @{ $PATHS{$qry_node->id}};
-
-for (my $idx = 1; $idx  < scalar @qry_ancestors_array; $idx++){
-    my $present_taxa  = (@qry_ancestors_array)[$idx - 1];
-    my $previous_taxa = (@qry_ancestors_array)[$idx];
-    my $present_idx  = $target_taxons->{$present_taxa->id}->{'matrix_number'};
-    my $previous_idx = $target_taxons->{$previous_taxa->id}->{'matrix_number'};
-    $M(,$present_idx) -= $M(,$previous_idx);
+## normalise the scores by the sum of their logs, i.e., product of their probabilities.
+unless (defined $hard_threshold) { # do not do it if using hard_threshold because the matrix has a single entry per gene equal to 1.
+    $M /=$M->xchg(0,1)->sumover ; 
+    $M->inplace->setnantobad->inplace->setbadtoval(0);
 }
 
-unless (defined $hard_threshold){
-    for my $idx ( 0 .. scalar (keys %S) - 1){
-        my $min_score = $M($idx,$qry_node_ancestestors)->min;
-        if ($min_score < 0){
-            $M($idx,$qry_node_ancestestors) -= $M($idx,$qry_node_ancestestors)->min;
-        }
-        $M($idx,$qry_node_ancestestors) /= $M($idx,$qry_node_ancestestors)->sum;
-    }
-}
-
-# replace nan to 0.
-$M->inplace->setnantobad->inplace->setbadtoval(0);
-my $qry_node_PhylostratumScores = $M(,$qry_node_ancestestors)->sumover;
+my $qry_node_PhylostratumScores = $M->sumover;
 
 open(OUT,">$out.qry_node_phylostratumscores.txt") or die $!;
-print OUT join "\t", map { $target_taxons->{$_->id}->{'scientific_name'};} @{ $PATHS{$qry_node->id} };
+print OUT join "\t", map { $qry_ancestors{$_}->{"scientific_name"};} sort { $qry_ancestors{$a}->{'matrix_number'} <=> $qry_ancestors{$b}->{'matrix_number'} }  keys %qry_ancestors;
 print OUT "\n";
-print OUT join "\t", $M(,$qry_node_ancestestors)->sumover->list;
+print OUT join "\t", $qry_node_PhylostratumScores->list;
 print OUT "\n";
 close(OUT);
 
@@ -264,12 +235,12 @@ print_OUT("Printing results to [ $out.txt ]");
 open(OUT,">$out.txt") or die $!;
 # print colnames of output file
 
-print OUT join "\t", map { $target_taxons->{$_->id}->{'scientific_name'};} @{ $PATHS{$qry_node->id} };
+print OUT join "\t", map { $qry_ancestors{$_}->{"scientific_name"};} sort { $qry_ancestors{$a}->{'matrix_number'} <=> $qry_ancestors{$b}->{'matrix_number'} }  keys %qry_ancestors;
 print OUT "\n";
 $gene_counter = 0;
 foreach my $qry_gene (keys %S){
     print OUT $qry_gene,"\t";
-    print OUT join "\t", $M($gene_counter,$qry_node_ancestestors)->xchg(0,1)->list;
+    print OUT join "\t", $M($gene_counter,)->xchg(0,1)->list;
     print OUT "\n";
     $gene_counter++;
 }
@@ -280,4 +251,111 @@ print_OUT("Done");
 
 
 exit;
+
+__END__
+
+=head1 NAME
+ 
+ Perl implementation of PAGE: parametric analysis of gene set enrichment. As bonus includes strategies to correct for gene clusters.
+ 
+=head1 DESCRIPTION
+
+B<This program> will perform a Phylostratigraphy analysis. It provides a implementation and extension of the original methodology of Domazet-Loso et. al. (2003).
+ Please see readme for information on Perl module requirments and input and output files.
+ 
+ For comments or complains please contact intipedroso@gmail.com
+ 
+ References:
+  Domazet-Loso, T., and Tautz, D. (2003). An evolutionary analysis of orphan genes in Drosophila. Genome Res. 13, 2213-2219.
+
+=head1 SYNOPSIS
+
+    ./phylostratiphy.pl [options]
+
+    General options
+    -h, --help		print help message
+    -m, --man		print complete documentation
+    Input Files
+    -blast         Output from blast
+    -tax_folder    Folder with taxonomy information
+    -blast_format  Format of blast output
+    -virus_list    List with ids of viral taxons
+    -query_taxon   Taxnomy identifier of query specie.
+ 
+    Output Files
+    -o, --o        Name of output files
+
+    Analysis options
+    -hard, --hard_threshold    Switches to original methodology of Domazet-Loso et. al. (2003)
+    -use_coverage  Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+ 
+ 
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+Print help message
+
+=item B<-man>
+
+Print complete documentation
+
+=item B<-blast>
+ Output from blast
+ 
+=item B<-tax_folder>
+ 
+ Folder with taxonomy information
+ 
+=item B<-blast_format>  
+ 
+ Format of blast output
+
+=item B<-virus_list>    
+ 
+ List with ids of viral taxons
+ 
+=item B<-query_taxon>   
+ 
+ Taxnomy identifier of query specie.
+ 
+=item B<-o, --out>
+ 
+ Name of output files
+
+=item B<-hard, --hard_threshold>
+ 
+ Switches to original methodology of Domazet-Loso et. al. (2003)
+
+=item B<-use_coverage>
+ 
+ Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+
+=back
+ 
+=head2 DESCRIPTION
+
+TODO
+
+=head3 Examples
+
+=over 8
+
+=item B<1. Basic Analysis>
+
+To run the analyses with a small example do
+
+>my_perl phylostratiphy.pl -blast dysbindin.blast_out.txt -tax_folder data/ -query_taxon 9606 -virus_list tmp.virus.txt -out test_phylostratiphy
+
+The example consistes of human sequences and so -query_taxon 9606 corresponds to the human tax id.
+MORE TO COME
+ 
+ 
+=back
+
+
+
+=cut
 
