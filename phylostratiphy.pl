@@ -252,3 +252,110 @@ print_OUT("Done");
 
 exit;
 
+__END__
+
+=head1 NAME
+ 
+ Perl implementation of PAGE: parametric analysis of gene set enrichment. As bonus includes strategies to correct for gene clusters.
+ 
+=head1 DESCRIPTION
+
+B<This program> will perform a Phylostratigraphy analysis. It provides a implementation and extension of the original methodology of Domazet-Loso et. al. (2003).
+ Please see readme for information on Perl module requirments and input and output files.
+ 
+ For comments or complains please contact intipedroso@gmail.com
+ 
+ References:
+  Domazet-Loso, T., and Tautz, D. (2003). An evolutionary analysis of orphan genes in Drosophila. Genome Res. 13, 2213-2219.
+
+=head1 SYNOPSIS
+
+    ./phylostratiphy.pl [options]
+
+    General options
+    -h, --help		print help message
+    -m, --man		print complete documentation
+    Input Files
+    -blast         Output from blast
+    -tax_folder    Folder with taxonomy information
+    -blast_format  Format of blast output
+    -virus_list    List with ids of viral taxons
+    -query_taxon   Taxnomy identifier of query specie.
+ 
+    Output Files
+    -o, --o        Name of output files
+
+    Analysis options
+    -hard, --hard_threshold    Switches to original methodology of Domazet-Loso et. al. (2003)
+    -use_coverage  Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+ 
+ 
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+Print help message
+
+=item B<-man>
+
+Print complete documentation
+
+=item B<-blast>
+ Output from blast
+ 
+=item B<-tax_folder>
+ 
+ Folder with taxonomy information
+ 
+=item B<-blast_format>  
+ 
+ Format of blast output
+
+=item B<-virus_list>    
+ 
+ List with ids of viral taxons
+ 
+=item B<-query_taxon>   
+ 
+ Taxnomy identifier of query specie.
+ 
+=item B<-o, --out>
+ 
+ Name of output files
+
+=item B<-hard, --hard_threshold>
+ 
+ Switches to original methodology of Domazet-Loso et. al. (2003)
+
+=item B<-use_coverage>
+ 
+ Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+
+=back
+ 
+=head2 DESCRIPTION
+
+TODO
+
+=head3 Examples
+
+=over 8
+
+=item B<1. Basic Analysis>
+
+To run the analyses with a small example do
+
+>my_perl phylostratiphy.pl -blast dysbindin.blast_out.txt -tax_folder data/ -query_taxon 9606 -virus_list tmp.virus.txt -out test_phylostratiphy
+
+The example consistes of human sequences and so -query_taxon 9606 corresponds to the human tax id.
+MORE TO COME
+ 
+ 
+=back
+
+
+
+=cut
+
