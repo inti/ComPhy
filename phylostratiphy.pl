@@ -195,8 +195,8 @@ foreach my $qry_gene (keys %S){
         my $subject_node = $NODES{ $subject_taxid };
         my $lca_matrix_pos = $qry_ancestors{ $LCA{ $subject_node->id }->id }->{'matrix_number'} ; 
         next if (not defined $lca_matrix_pos);
-        if ($oldest_lca_matrix_pos < $lca_matrix_pos){
-            $oldest_lca_matrix_pos = $lca_matrix_pos; # record the oldest LCA of the hits of this gene.
+        if (defined $hard_threshold) {
+            $oldest_lca_matrix_pos = $lca_matrix_pos if ($oldest_lca_matrix_pos < $lca_matrix_pos); # record the oldest LCA of the hits of this gene.
         } else {
             if ($hit->{'score'} eq "inf"){
                 $M($gene_counter,$lca_matrix_pos) += $largest_hit_values{'score'};
@@ -207,17 +207,18 @@ foreach my $qry_gene (keys %S){
     }
     # score as 1 the oldest LCA of this gene.
     if (defined $hard_threshold){
-        $M($gene_counter,$oldest_lca_matrix_pos) = 1;
+        next if ($hard_threshold == -1);
+        $M($gene_counter,$oldest_lca_matrix_pos) .= 1;
     }
     $gene_counter++;
 }
-
 print_OUT("Printing query taxan Phylostratum Scores results to [ $out.qry_node_phylostratumscores.txt ]");
 
-# normalise the scores by the sum of their logs, i.e., product of their probabilities.
-$M /=$M->xchg(0,1)->sumover unless (defined $hard_threshold); # do not do it if using hard_threshold because the matrix has a single entry per gene equal to 1.
-
-print $M;
+## normalise the scores by the sum of their logs, i.e., product of their probabilities.
+unless (defined $hard_threshold) { # do not do it if using hard_threshold because the matrix has a single entry per gene equal to 1.
+    $M /=$M->xchg(0,1)->sumover ; 
+    $M->inplace->setnantobad->inplace->setbadtoval(0);
+}
 
 my $qry_node_PhylostratumScores = $M->sumover;
 
