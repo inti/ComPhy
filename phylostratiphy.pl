@@ -207,11 +207,12 @@ foreach my $qry_gene (keys %S){
     }
     # score as 1 the oldest LCA of this gene.
     if (defined $hard_threshold){
-        next if ($hard_threshold == -1);
+        next if ($oldest_lca_matrix_pos == -1);
         $M($gene_counter,$oldest_lca_matrix_pos) .= 1;
     }
     $gene_counter++;
 }
+
 print_OUT("Printing query taxan Phylostratum Scores results to [ $out.qry_node_phylostratumscores.txt ]");
 
 ## normalise the scores by the sum of their logs, i.e., product of their probabilities.
