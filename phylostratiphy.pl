@@ -18,7 +18,7 @@ use constant E_CONSTANT => log(10);
 use PhyloStratiphytUtils;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $query_taxon, $out,
-        $use_coverage, $virus_list, $hard_threshold);
+        $use_coverage, $virus_list, $hard_threshold,$gi_tax_id_info);
 
 GetOptions(
     'help' => \$help,
@@ -31,6 +31,8 @@ GetOptions(
     'virus_list=s' => \$virus_list,
     'out|o=s' => \$out,
     'hard_threshold|hard=f' => \$hard_threshold,
+    'gi_tax_id=s' => \$gi_tax_id_info, #     dysbindin.tax_info.csv") or die $!; #  gi_to_tax_id_from_blast.csv
+
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -120,7 +122,7 @@ foreach my $file (@$blast_out){
 
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
 
-my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis] );
+my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis],$gi_tax_id_info );
 
 ## remove hits to unwanted taxons
 if (defined $virus_list){

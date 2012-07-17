@@ -194,18 +194,25 @@ sub print_OUT {
 
 sub fetch_tax_ids_from_blastdb {
     my $seq_ids = shift;
-    print_OUT("Getting taxons ids for hit sequences");
-    print_OUT("   '-> Printing ids to temporary file");
-    my $tmp_file = "tmp.seq_tax_ids.$$";
-    open(IDS,">$tmp_file.txt") or die $!;
-    foreach my $id (@$seq_ids){ print IDS $id,"\n"; }
-    close(IDS);
-    print_OUT("   '-> Running blastdbcmd to get sequences information");
-    #`blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch $tmp_file.txt -db nr -out $tmp_file.csv`;
-    #open (TAX_IDS,"$tmp_file.csv") or die $!;
-    print_OUT("   '-> Parsing sequence information");
-    #    open (TAX_IDS,"gi_to_tax_id_from_blast.csv") or die $!;
-    open (TAX_IDS,"dysbindin.tax_info.csv") or die $!; #  gi_to_tax_id_from_blast.csv
+    my $tax_info_file = shift;
+    my $gi_to_tax_id = "";
+    if (not defined $tax_info_file){
+        print_OUT("Getting taxons ids for hit sequences");
+        print_OUT("   '-> Printing ids to temporary file");
+        my $tmp_file = "tmp.seq_tax_ids.$$";
+        open(IDS,">$tmp_file.txt") or die $!;
+        foreach my $id (@$seq_ids){ print IDS $id,"\n"; }
+        close(IDS);
+        unlink("$tmp_file.txt");
+        print_OUT("   '-> Running blastdbcmd to get sequences information");
+        `blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch $tmp_file.txt -db nr -out $tmp_file.csv`;
+        $gi_to_tax_id = "$tmp_file.csv";
+    } else {
+        $gi_to_tax_id = $tax_info_file;
+    }
+
+    print_OUT("   '-> Parsing sequence information from [ $gi_to_tax_id ]");
+    open (TAX_IDS,$gi_to_tax_id) or die $!;
     my %back_gi_to_taxinfo = ();
     my %target_taxons = ();
     my $taxon_counter = 0;
@@ -221,9 +228,10 @@ sub fetch_tax_ids_from_blastdb {
         }
         $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'matrix_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}};
     }
-    unlink("$tmp_file.txt");
-    unlink("$tmp_file.csv");
-    print_OUT("   '-> Temorary files removed");
+    if (not defined $tax_info_file){
+        unlink("$gi_to_tax_id");
+        print_OUT("   '-> Temorary files removed");
+    }
     return(\%back_gi_to_taxinfo,\%target_taxons);
 }
 
