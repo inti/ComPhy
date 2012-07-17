@@ -31,8 +31,7 @@ GetOptions(
     'virus_list=s' => \$virus_list,
     'out|o=s' => \$out,
     'hard_threshold|hard=f' => \$hard_threshold,
-    'gi_tax_id=s' => \$gi_tax_id_info, #     dysbindin.tax_info.csv") or die $!; #  gi_to_tax_id_from_blast.csv
-
+    'gi_tax_id=s' => \$gi_tax_id_info,  # dysbindin.tax_info.csv
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
