@@ -18,7 +18,8 @@ use constant E_CONSTANT => log(10);
 use PhyloStratiphytUtils;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $query_taxon, $out,
-        $use_coverage, $virus_list, $hard_threshold,$gi_tax_id_info,$blastdbcmd);
+        $use_coverage, $virus_list, $hard_threshold,$gi_tax_id_info,$blastdbcmd,
+        $seq_db);
 
 GetOptions(
     'help' => \$help,
@@ -33,6 +34,7 @@ GetOptions(
     'hard_threshold|hard=f' => \$hard_threshold,
     'gi_tax_id=s' => \$gi_tax_id_info,  # dysbindin.tax_info.csv
     'blastdbcmd=s' => \$blastdbcmd,
+    'seq_db|db=s' => \$seq_db,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -41,6 +43,7 @@ pod2usage(-exitstatus => 2, -verbose => 2) if (defined $man);
 
 defined $blastdbcmd or $blastdbcmd = `which blastdbcmd`;
 chomp($blastdbcmd);
+defined $seq_db or $seq_db = "nr"; # assuming proteins and that path to dbs is on a enviromental variable
 
 print_OUT("Parsing taxonomy information");
 
@@ -126,7 +129,7 @@ foreach my $file (@$blast_out){
 
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
 
-my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis],$blastdbcmd,$gi_tax_id_info, );
+my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis],$blastdbcmd,$seq_db,$out,$gi_tax_id_info, );
 
 ## remove hits to unwanted taxons
 if (defined $virus_list){

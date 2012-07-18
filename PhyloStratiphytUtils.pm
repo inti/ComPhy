@@ -195,25 +195,24 @@ sub print_OUT {
 sub fetch_tax_ids_from_blastdb {
     my $seq_ids = shift;
     my $blastdbcmd = shift;
+    my $seq_db = shift;
+    my $out = shift;
     my $tax_info_file = shift;
-    my $gi_to_tax_id = "";
+    
     if (not defined $tax_info_file){
-        print_OUT("Getting taxons ids for hit sequences");
-        print_OUT("   '-> Printing ids to temporary file");
+        print_OUT("Getting taxons ids for hit sequences from sequence db [ $seq_db ]");
         my $tmp_file = "tmp.seq_tax_ids.$$";
         open(IDS,">$tmp_file.txt") or die $!;
         foreach my $id (@$seq_ids){ print IDS $id,"\n"; }
         close(IDS);
+        $tax_info_file = "$out.gi_tax_id.csv";
         print_OUT("   '-> Running blastdbcmd to get sequences information");
-        `$blastdbcmd -outfmt \"%a,%g,%T,%L,%S\" -entry_batch $tmp_file.txt -db nr -out $tmp_file.csv`;
-        $gi_to_tax_id = "$tmp_file.csv";
-	unlink("$tmp_file.txt");
-    } else {
-        $gi_to_tax_id = $tax_info_file;
+        `$blastdbcmd -outfmt \"%a,%g,%T,%L,%S\" -entry_batch $tmp_file.txt -db $seq_db -out $tax_info_file`;
+        unlink("$tmp_file.txt");
     }
 
-    print_OUT("   '-> Parsing sequence information from [ $gi_to_tax_id ]");
-    open (TAX_IDS,$gi_to_tax_id) or die $!;
+    print_OUT("   '-> Parsing sequence information from [ $tax_info_file ]");
+    open (TAX_IDS,$tax_info_file ) or die $!;
     my %back_gi_to_taxinfo = ();
     my %target_taxons = ();
     my $taxon_counter = 0;
@@ -228,10 +227,6 @@ sub fetch_tax_ids_from_blastdb {
             $taxon_counter++;
         }
         $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'matrix_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}};
-    }
-    if (not defined $tax_info_file){
-        unlink("$gi_to_tax_id");
-        print_OUT("   '-> Temorary files removed");
     }
     return(\%back_gi_to_taxinfo,\%target_taxons);
 }
