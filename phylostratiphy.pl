@@ -116,7 +116,7 @@ foreach my $file (@$blast_out){
         $p_value = pdl 1 - $p_value;
         $p_value = pdl $e_value if ($p_value == 0);
         my $score = -1*($p_value->log) * $coverage;
-        push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[1], 'score' => $score, 'p_value' => $p_value, 'e_value' => $e_value };
+        push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[3], 'score' => $score, 'p_value' => $p_value, 'e_value' => $e_value };
         if ($e_value > 0 and $score >  $largest_hit_values{'score'}){
             %largest_hit_values = ('score' => $score->list, 'e_value' => $e_value->list, 'p_value' => $p_value->list );
         }
