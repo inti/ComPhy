@@ -194,6 +194,7 @@ sub print_OUT {
 
 sub fetch_tax_ids_from_blastdb {
     my $seq_ids = shift;
+    my $blastdbcmd = shift;
     my $tax_info_file = shift;
     my $gi_to_tax_id = "";
     if (not defined $tax_info_file){
@@ -205,7 +206,7 @@ sub fetch_tax_ids_from_blastdb {
         close(IDS);
         unlink("$tmp_file.txt");
         print_OUT("   '-> Running blastdbcmd to get sequences information");
-        `blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch $tmp_file.txt -db nr -out $tmp_file.csv`;
+        `$blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch $tmp_file.txt -db nr -out $tmp_file.csv`;
         $gi_to_tax_id = "$tmp_file.csv";
     } else {
         $gi_to_tax_id = $tax_info_file;
