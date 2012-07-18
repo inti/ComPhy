@@ -8,7 +8,7 @@ my_perl phylostratiphy.pl \
     -query_taxon 9606 \
 	 -gi_tax_id dysbindin.tax_info.csv  \
     -hard 1e-3 \
-    -virus_list tmp.virus.txt \
+    -virus_list virus_list.txt \
     -out test_phylostratiphy
 
 
