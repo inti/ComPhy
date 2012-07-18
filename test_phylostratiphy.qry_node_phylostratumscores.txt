@@ -1,2 +1,2 @@
-Homininae	Hominidae	Hominoidea	Catarrhini	Simiiformes	Euarchontoglires	Eutheria	Theria	Mammalia	Amniota	Tetrapoda	Euteleostomi	Chordata	Deuterostomia	Coelomata	Bilateria	Eumetazoa	Metazoa	Opisthokonta	Eukaryota	cellular organisms
-0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	1	0	0	0
+Homininae	Hominidae	Hominoidea	Catarrhini	Simiiformes	Euarchontoglires	Eutheria	Theria	Mammalia	Amniota	Tetrapoda	Euteleostomi	Chordata	Deuterostomia	Coelomata	Eumetazoa	Metazoa	cellular organisms
+0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	1	0

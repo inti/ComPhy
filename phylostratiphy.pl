@@ -40,6 +40,7 @@ pod2usage(-exitstatus => 2, -verbose => 2) if (defined $man);
 
 
 defined $blastdbcmd or $blastdbcmd = `which blastdbcmd`;
+chomp($blastdbcmd);
 
 print_OUT("Parsing taxonomy information");
 

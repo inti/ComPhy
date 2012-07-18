@@ -204,10 +204,10 @@ sub fetch_tax_ids_from_blastdb {
         open(IDS,">$tmp_file.txt") or die $!;
         foreach my $id (@$seq_ids){ print IDS $id,"\n"; }
         close(IDS);
-        unlink("$tmp_file.txt");
         print_OUT("   '-> Running blastdbcmd to get sequences information");
-        `$blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch $tmp_file.txt -db nr -out $tmp_file.csv`;
+        `$blastdbcmd -outfmt \"%a,%g,%T,%L,%S\" -entry_batch $tmp_file.txt -db nr -out $tmp_file.csv`;
         $gi_to_tax_id = "$tmp_file.csv";
+	unlink("$tmp_file.txt");
     } else {
         $gi_to_tax_id = $tax_info_file;
     }
