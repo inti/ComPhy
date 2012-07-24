@@ -1,3 +1,3 @@
-Homininae	Hominidae	Hominoidea	Catarrhini	Simiiformes	Euarchontoglires	Eutheria	Theria	Mammalia	Amniota	Tetrapoda	Euteleostomi	Chordata	Deuterostomia	Coelomata	Eumetazoa	Metazoa	cellular organisms
-gi|308199484|ref|NP_001184068.1|	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0
-gi|17834109|gb|AAL46636.1|AF394226_1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0
+Homininae	Hominidae	Hominoidea	Catarrhini	Simiiformes	Euarchontoglires	Eutheria	Theria	Mammalia	Amniota	Tetrapoda	Euteleostomi	Chordata	Deuterostomia	Coelomata	Bilateria	Eumetazoa	Metazoa	Opisthokonta	Eukaryota	cellular organisms
+gi|308199484|ref|NP_001184068.1|	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0
+gi|17834109|gb|AAL46636.1|AF394226_1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0
