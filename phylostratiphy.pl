@@ -192,7 +192,8 @@ foreach my $qry_gene (keys %S){
             my $subject_node = $tree->find_node(-id => $subject_taxid);
             if ( not defined $subject_node ){
                 $subject_node = $tree->find_node(-scientific_name => $seq_to_tax_id->{$hit->{'subject_id'}}->{'scientific_name'});
-                
+            }
+	    if ( not defined $subject_node ){
                 print_OUT("Taxon not found for [ $subject_taxid ]");
                 next;
             }
