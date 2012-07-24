@@ -184,18 +184,20 @@ foreach my $qry_gene (keys %S){
         next if (not exists $seq_to_tax_id->{ $hit->{'subject_id'} } );
         # get some info about the target taxon and the sequence
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
-        my $subject_gi = $seq_to_tax_id->{$hit->{'subject_id'}}->{'gi'};
+        my $subject_gi = $seq_to_tax_id->{$subject_taxid}->{'gi'};
         # next if hits is with qry taxon.
         next if ( $subject_taxid == $main_taxon->id);
         if (not exists $NODES{ $subject_taxid } ){ 
             # get the node for the target taxon from the tree
             my $subject_node = $tree->find_node(-id => $subject_taxid);
             if ( not defined $subject_node ){
-                $subject_node = $tree->find_node(-scientific_name => $seq_to_tax_id->{$hit->{'subject_id'}}->{'scientific_name'});
+                $subject_node = $tree->find_node(-scientific_name => $seq_to_tax_id->{ $subject_taxid }->{'scientific_name'});
             }
-	    if ( not defined $subject_node ){
-                print_OUT("Taxon not found for [ $subject_taxid ]");
-                next;
+            if ( not defined $subject_node ){
+                    print_OUT("Taxon not found for [ $subject_taxid ]");
+                    map { print $_->id, " ", $_->scientific_name,"\n";} $tree->get_nodes;
+                getc;
+                    next;
             }
             # get LCA between leaf and query taxon.
             my $lca = $tree->get_lca( ($subject_node,$qry_node) );
