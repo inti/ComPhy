@@ -220,13 +220,13 @@ sub fetch_tax_ids_from_blastdb {
     while (my $line = <TAX_IDS>){
         chomp($line);
         my @data = split(/,/,$line);
-        $back_gi_to_taxinfo{$data[1]} = {'accession' => $data[0], 'gi' => $data[1],'taxid' => $data[2], 'common_tax_name' => $data[3],'scientific_name' => $data[4]};
-        push @{ $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'seqs'} }, $back_gi_to_taxinfo{$data[1]}->{'accession' };
-        if (not exists $seen_taxon{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} } ){
-            $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}} =  $taxon_counter;
+        $back_gi_to_taxinfo{$data[0]} = {'accession' => $data[0], 'gi' => $data[0],'taxid' => $data[2], 'common_tax_name' => $data[3],'scientific_name' => $data[4]};
+        push @{ $target_taxons{ $back_gi_to_taxinfo{$data[0]}->{'taxid'} }->{'seqs'} }, $back_gi_to_taxinfo{$data[0]}->{'accession' };
+        if (not exists $seen_taxon{ $back_gi_to_taxinfo{$data[0]}->{'taxid'} } ){
+            $seen_taxon{$back_gi_to_taxinfo{$data[0]}->{'taxid'}} =  $taxon_counter;
             $taxon_counter++;
         }
-        $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'matrix_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}};
+        $target_taxons{ $back_gi_to_taxinfo{$data[0]}->{'taxid'} }->{'matrix_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[0]}->{'taxid'}};
     }
     return(\%back_gi_to_taxinfo,\%target_taxons);
 }
@@ -234,7 +234,6 @@ sub fetch_tax_ids_from_blastdb {
 sub get_tree_from_taxids {
     my $self = shift;
     my $species_ids = shift;
-    
     # the full lineages of the species are merged into a single tree
     my $tree;
     my $spc_counter = 0;
@@ -245,6 +244,7 @@ sub get_tree_from_taxids {
             my $node = $self->get_taxon(-taxonid => $ncbi_id);
             if ($tree) {
                 $tree->merge_lineage($node);
+		
             } else {
                 $tree = Bio::Tree::Tree->new(-verbose => $self->verbose, -node => $node);
             }
@@ -253,7 +253,6 @@ sub get_tree_from_taxids {
             $self->throw("No taxonomy database node for species ".$ncbi_id);
         }
     }
-    
     return $tree;
 }
 
