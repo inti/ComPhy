@@ -220,13 +220,13 @@ sub fetch_tax_ids_from_blastdb {
     while (my $line = <TAX_IDS>){
         chomp($line);
         my @data = split(/,/,$line);
-        $back_gi_to_taxinfo{$data[1]} = {'accession' => $data[0], 'gi' => $data[1],'taxid' => $data[2], 'common_tax_name' => $data[3],'scientific_name' => $data[4]};
-        push @{ $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'seqs'} }, $back_gi_to_taxinfo{$data[1]}->{'accession' };
-        if (not exists $seen_taxon{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} } ){
-            $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}} =  $taxon_counter;
+        $back_gi_to_taxinfo{$data[0]} = {'accession' => $data[0], 'gi' => $data[0],'taxid' => $data[2], 'common_tax_name' => $data[3],'scientific_name' => $data[4]};
+        push @{ $target_taxons{ $back_gi_to_taxinfo{$data[0]}->{'taxid'} }->{'seqs'} }, $back_gi_to_taxinfo{$data[0]}->{'accession' };
+        if (not exists $seen_taxon{ $back_gi_to_taxinfo{$data[0]}->{'taxid'} } ){
+            $seen_taxon{$back_gi_to_taxinfo{$data[0]}->{'taxid'}} =  $taxon_counter;
             $taxon_counter++;
         }
-        $target_taxons{ $back_gi_to_taxinfo{$data[1]}->{'taxid'} }->{'matrix_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[1]}->{'taxid'}};
+        $target_taxons{ $back_gi_to_taxinfo{$data[0]}->{'taxid'} }->{'matrix_number'} = $seen_taxon{$back_gi_to_taxinfo{$data[0]}->{'taxid'}};
     }
     return(\%back_gi_to_taxinfo,\%target_taxons);
 }
