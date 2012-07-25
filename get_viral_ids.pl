@@ -7,7 +7,6 @@ use Bio::DB::Taxonomy;
 # local modules
 use PhyloStratiphytUtils;
 
-
 our (   $help, $man, $tax_folder, $out, $tax_id);
 
 GetOptions(
@@ -27,7 +26,6 @@ print_OUT("Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
 my $db = Bio::DB::Taxonomy->new(-source => 'flatfile', -nodesfile => $nodesfile, -namesfile => $namefile);
-
 
 
 my $node = $db->get_Taxonomy_Node(-taxonid => $tax_id);

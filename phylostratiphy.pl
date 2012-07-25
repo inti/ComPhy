@@ -55,7 +55,7 @@ print_OUT("   '-> Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
 my $db = Bio::DB::Taxonomy->new(-source => 'flatfile', -nodesfile => $nodesfile, -namesfile => $namefile);
-
+my $tree_functions = Bio::Tree::Tree->new(); # load some tree functions
 
 ### define some variables to start storing the results
 
@@ -150,9 +150,10 @@ print_OUT("Starting to calculate PhyloStratum Scores");
 print_OUT("Identifiying last common ancestors between [ " . $main_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
 print_OUT("   '-> Building tree with query and target species");
 # get the tree using the taxonomy ids.
-my $tree = get_tree_from_taxids($db,[$main_taxon->id,keys %$target_taxons]);
+my $tree = get_tree_from_taxids($db,[$main_taxon->id,keys %{$target_taxons}]);
+
 # remove redundant nodes, i.e., those with only one ancestor AND one descentdant.
-$tree->contract_linear_paths;
+#$tree->contract_linear_paths; # this is comented until finding why it produces a bug in which some species seem to be removed form the tree
 
 # get the node for the taxon of interest
 my $qry_node = $tree->find_node(-id => $main_taxon->id);
@@ -184,15 +185,24 @@ foreach my $qry_gene (keys %S){
         next if (not exists $seq_to_tax_id->{ $hit->{'subject_id'} } );
         # get some info about the target taxon and the sequence
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
-        my $subject_gi = $seq_to_tax_id->{$hit->{'subject_id'}}->{'gi'};
+        my $subject_gi = $seq_to_tax_id->{$subject_taxid}->{'gi'};
         # next if hits is with qry taxon.
         next if ( $subject_taxid == $main_taxon->id);
         if (not exists $NODES{ $subject_taxid } ){ 
             # get the node for the target taxon from the tree
             my $subject_node = $tree->find_node(-id => $subject_taxid);
             if ( not defined $subject_node ){
-                print_OUT("Taxon not found for [ $subject_taxid ]");
-                next;
+                $subject_node = $tree->find_node(-scientific_name => $seq_to_tax_id->{ $subject_taxid }->{'scientific_name'});
+            }
+	    if ( not defined $subject_node ){
+		my $taxon_from_db = $db->get_taxon(-taxonid => $subject_taxid);
+		if ($taxon_from_db){
+		  my @lineage = $tree_functions->get_lineage_nodes($taxon_from_db);
+		  next if ($lineage[0] ne "cellular organisms");
+		}
+	    }
+            if ( not defined $subject_node ){
+                    print_OUT("Taxon not found for [ $subject_taxid ]");
             }
             # get LCA between leaf and query taxon.
             my $lca = $tree->get_lca( ($subject_node,$qry_node) );

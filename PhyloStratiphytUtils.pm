@@ -234,7 +234,6 @@ sub fetch_tax_ids_from_blastdb {
 sub get_tree_from_taxids {
     my $self = shift;
     my $species_ids = shift;
-    
     # the full lineages of the species are merged into a single tree
     my $tree;
     my $spc_counter = 0;
@@ -245,6 +244,7 @@ sub get_tree_from_taxids {
             my $node = $self->get_taxon(-taxonid => $ncbi_id);
             if ($tree) {
                 $tree->merge_lineage($node);
+		
             } else {
                 $tree = Bio::Tree::Tree->new(-verbose => $self->verbose, -node => $node);
             }
@@ -253,7 +253,6 @@ sub get_tree_from_taxids {
             $self->throw("No taxonomy database node for species ".$ncbi_id);
         }
     }
-    
     return $tree;
 }
 
