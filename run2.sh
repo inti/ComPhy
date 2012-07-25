@@ -2,7 +2,7 @@
 
 # run test of script.
 
-my_perl phylostratiphy.pl \
+perl phylostratiphy.pl \
     -blast dysbindin.blast_out.txt \
     -tax_folder data/ \
     -query_taxon 9606 \
