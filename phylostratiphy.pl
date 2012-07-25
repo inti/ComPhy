@@ -203,9 +203,6 @@ foreach my $qry_gene (keys %S){
 	    }
             if ( not defined $subject_node ){
                     print_OUT("Taxon not found for [ $subject_taxid ]");
-                    map { print $_->id, " ", $_->scientific_name,"\n";} $tree->get_nodes;
-                getc;
-                    next;
             }
             # get LCA between leaf and query taxon.
             my $lca = $tree->get_lca( ($subject_node,$qry_node) );
