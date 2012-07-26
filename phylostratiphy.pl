@@ -18,7 +18,7 @@ use constant E_CONSTANT => log(10);
 use PhyloStratiphytUtils;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
-        $use_coverage, $virus_list, $hard_threshold,$gi_tax_id_info,$blastdbcmd,
+        $use_coverage, $hard_threshold,$gi_tax_id_info,$blastdbcmd,
         $seq_db);
 
 GetOptions(
@@ -29,7 +29,6 @@ GetOptions(
     'blast_format=s' => \$blast_format,
     'use_coverage' => \$use_coverage,
     'query_taxon=s' => \$user_provided_query_taxon_id,
-    'virus_list=s' => \$virus_list,
     'out|o=s' => \$out,
     'hard_threshold|hard=f' => \$hard_threshold,
     'gi_tax_id=s' => \$gi_tax_id_info,  # dysbindin.tax_info.csv
@@ -129,19 +128,7 @@ foreach my $file (@$blast_out){
 
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
 
-my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis],$blastdbcmd,$seq_db,$out,$gi_tax_id_info, );
-
-## remove hits to unwanted taxons
-if (defined $virus_list){
-    print_OUT("Parsing list of viral taxa to exclude");
-    open(VL,$virus_list) or die $!;
-    while(my $id = <VL>){
-        chomp($id);
-        delete($target_taxons->{$id});
-    }
-    close(VL);    
-}
-
+my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis],$blastdbcmd,$seq_db,$out,$gi_tax_id_info);
 
 # get taxon information for the taxon of the query sequences.
 my $query_taxon = $db->get_taxon(-taxonid => $user_provided_query_taxon_id);
