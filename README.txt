@@ -1,23 +1,22 @@
-This is a Perl implementation of the PhyloStratigraphy comparative genomics methods.
+* Intro
+	This is a Perl implementation of the PhyloStratigraphy comparative genomics methods. This program will perform a PhyloStratigraphy analysis. It provides a implementation and extensions of the original methodology of Domazet-Loso et. al. (2003).
  
-
-This program will perform a PhyloStratigraphy analysis. It provides a implementation and extensions of the original methodology of Domazet-Loso et. al. (2003).
- Please see README for information on Perl module requirments and some additional information.
+	Please see README for information on Perl module requirments and some additional information.
  
-Comments, suggestions or complains you be addressed to IntiPedroso@gmail.com
- 
-References: Domazet-Loso, T., and Tautz, D. (2003). An evolutionary analysis of orphan genes in Drosophila. Genome Res. 13, 2213-2219.
+* Command line options
+	For information on commands and options do > perl phylostratiphy.pl -man
 
+* Installation
+	The following Perl modules are needed as requierment beyond those distributed with perl:
+	- PDL 
+	- Bio::DB::Taxonomy # part of BioPerl distribution
 
-For information on commands and options do > perl phylostratiphy.pl -man
+	Both modules are available at CPAN. For additional information on installing PDL see pdl.perl.org
 
-Installation
-The following Perl modules are needed as requierment beyond those distributed with perl:
-- PDL 
-- Bio::DB::Taxonomy # part of BioPerl distribution
+* Contact
 
-Both modules are available at CPAN. For additional information on installing PDL see pdl.perl.org
+   Comments, suggestions or complains should be addressed to Inti Pedroso.
+	Inti Pedroso: IntiPeroso@gmail.com
 
-Contact
-
-Inti Pedroso: IntiPeroso@gmail.com
+* References
+	Domazet-Loso, T., and Tautz, D. (2003). An evolutionary analysis of orphan genes in Drosophila. Genome Res. 13, 2213-2219.
