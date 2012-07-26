@@ -17,7 +17,7 @@ use constant E_CONSTANT => log(10);
 
 use PhyloStratiphytUtils;
 
-our (   $help, $man, $tax_folder, $blast_out, $blast_format, $query_taxon, $out,
+our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $virus_list, $hard_threshold,$gi_tax_id_info,$blastdbcmd,
         $seq_db);
 
@@ -28,7 +28,7 @@ GetOptions(
     'tax_folder=s' => \$tax_folder,
     'blast_format=s' => \$blast_format,
     'use_coverage' => \$use_coverage,
-    'query_taxon=s' => \$query_taxon,
+    'query_taxon=s' => \$user_provided_query_taxon_id,
     'virus_list=s' => \$virus_list,
     'out|o=s' => \$out,
     'hard_threshold|hard=f' => \$hard_threshold,
@@ -144,28 +144,18 @@ if (defined $virus_list){
 
 
 # get taxon information for the taxon of the query sequences.
-my $main_taxon = $db->get_taxon(-taxonid => $query_taxon);
+my $query_taxon = $db->get_taxon(-taxonid => $user_provided_query_taxon_id);
 
 print_OUT("Starting to calculate PhyloStratum Scores");
-print_OUT("Identifiying last common ancestors between [ " . $main_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
+print_OUT("Identifiying last common ancestors between [ " . $query_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
 print_OUT("   '-> Building tree with query and target species");
-# get the tree using the taxonomy ids.
-my $tree = get_tree_from_taxids($db,[$main_taxon->id,keys %{$target_taxons}]);
-
-# remove redundant nodes, i.e., those with only one ancestor AND one descentdant.
-#$tree->contract_linear_paths; # this is comented until finding why it produces a bug in which some species seem to be removed form the tree
-
-# get the node for the taxon of interest
-my $qry_node = $tree->find_node(-id => $main_taxon->id);
-# get the root of the tree
-my $tree_root = $tree->get_root_node;
 
 print_OUT("   '-> Finding LCAs");
 # tax counter is number of taxon minus 1 because the taxon counter starts from 0;
 my $taxon_counter = (scalar (keys %$target_taxons) ) - 1;
 my %qry_ancestors = (); 
 my $matrix_number = 0;
-foreach my $taxon ( reverse $tree->get_lineage_nodes($qry_node) ){
+foreach my $taxon ( reverse $tree_functions->get_lineage_nodes($query_taxon) ){
     # here matrix numbers increase from tip to root of tree.
     $qry_ancestors{ $taxon->id } = { 'taxon' => $taxon, 'matrix_number' => $matrix_number++, 'scientific_name' => $taxon->scientific_name };
 }
@@ -176,6 +166,7 @@ my $M = zeroes scalar (keys %S), scalar (keys %qry_ancestors);
 
 # here store the lca between qry and target taxons.
 my %LCA = ();
+my %TAXON = ();
 my %NODES = ();
 my $gene_counter = 0;
 foreach my $qry_gene (keys %S){
@@ -187,32 +178,30 @@ foreach my $qry_gene (keys %S){
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
         my $subject_gi = $seq_to_tax_id->{$subject_taxid}->{'gi'};
         # next if hits is with qry taxon.
-        next if ( $subject_taxid == $main_taxon->id);
-        if (not exists $NODES{ $subject_taxid } ){ 
-            # get the node for the target taxon from the tree
-            my $subject_node = $tree->find_node(-id => $subject_taxid);
-            if ( not defined $subject_node ){
-                $subject_node = $tree->find_node(-scientific_name => $seq_to_tax_id->{ $subject_taxid }->{'scientific_name'});
-            }
-	    if ( not defined $subject_node ){
-		my $taxon_from_db = $db->get_taxon(-taxonid => $subject_taxid);
-		if ($taxon_from_db){
-		  my @lineage = $tree_functions->get_lineage_nodes($taxon_from_db);
-		  next if ($lineage[0] ne "cellular organisms");
-		}
-	    }
-            if ( not defined $subject_node ){
-                    print_OUT("Taxon not found for [ $subject_taxid ]");
-            }
-            # get LCA between leaf and query taxon.
-            my $lca = $tree->get_lca( ($subject_node,$qry_node) );
-            # next if we did not find a lca.
-            next if (not defined $lca);
-            $LCA{ $subject_node->id } = $lca;
-            $NODES{ $subject_taxid } = $subject_node;
+        next if ( $subject_taxid == $query_taxon->id); # CHECK THIS IS RIGHT
+        # do not query for taxons from db more than once
+        my $subject_taxon_from_db;
+        if (not exists $NODES{ $subject_taxid } ){
+            $subject_taxon_from_db = $db->get_taxon(-taxonid => $subject_taxid);
+            $TAXON{ $subject_taxid } = $subject_taxon_from_db;
+        } else {
+            $subject_taxon_from_db = $TAXON{ $subject_taxid };
         }
-        my $subject_node = $NODES{ $subject_taxid };
-        my $lca_matrix_pos = $qry_ancestors{ $LCA{ $subject_node->id }->id }->{'matrix_number'} ; 
+        
+        if (not exists $LCA{ $subject_taxid }){
+            my $lca = $tree_functions->get_lca( ($subject_taxon_from_db,$query_taxon) );
+            if (not defined $lca){
+                my @lineage = $tree_functions->get_lineage_nodes($subject_taxon_from_db);
+                if ($lineage[0] ne "cellular organisms") {
+                    $LCA{ $subject_taxid } = 'none';
+                    next;
+                }
+            }
+            $LCA{ $subject_taxid } = $lca;
+        }
+        next if ($LCA{ $subject_taxid } eq 'none'); # skip if previously stablished that there is not an LCA.
+
+        my $lca_matrix_pos = $qry_ancestors{ $LCA{ $subject_taxon_from_db->id }->id }->{'matrix_number'} ; 
         next if (not defined $lca_matrix_pos);
         if (defined $hard_threshold) {
             $oldest_lca_matrix_pos = $lca_matrix_pos if ($oldest_lca_matrix_pos < $lca_matrix_pos); # record the oldest LCA of the hits of this gene.
