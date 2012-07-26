@@ -134,7 +134,7 @@ my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis]
 my $query_taxon = $db->get_taxon(-taxonid => $user_provided_query_taxon_id);
 
 print_OUT("Starting to calculate PhyloStratum Scores");
-print_OUT("Will identifiying last common ancestors between [ " . $query_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
+print_OUT("   '-> Will identifiying last common ancestors between [ " . $query_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
 # tax counter is number of taxon minus 1 because the taxon counter starts from 0;
 my $taxon_counter = (scalar (keys %$target_taxons) ) - 1;
 my %qry_ancestors = (); 
@@ -145,7 +145,7 @@ foreach my $taxon ( ($query_taxon,reverse $tree_functions->get_lineage_nodes($qu
     $qry_ancestors{ $taxon->id } = { 'taxon' => $taxon, 'matrix_number' => $matrix_number++, 'scientific_name' => $taxon->scientific_name };
 }
 
-print_OUT("Finishing to calculate scores");
+print_OUT("   '-> Finishing to calculate scores");
 
 my $M = zeroes scalar (keys %S), scalar (keys %qry_ancestors);
 
@@ -154,7 +154,11 @@ my %LCA = ();
 my %TAXON = ();
 my %NODES = ();
 my $gene_counter = 0;
+my $n_genes = scalar (keys %S);
 foreach my $qry_gene (keys %S){
+    # print counter
+    print scalar localtime,"\t",progress_bar($gene_counter,$n_genes);
+    
     my $oldest_lca_matrix_pos = -1;
     foreach my $hit (@{ $S{$qry_gene} }){
         # skip if info about the hits was not recovered from the sequence db
@@ -204,8 +208,8 @@ foreach my $qry_gene (keys %S){
     }
     $gene_counter++;
 }
-
-print_OUT("Printing query taxan Phylostratum Scores results to [ $out.qry_node_phylostratumscores.txt ]");
+print "\n"; # to finish the counter above
+print_OUT("   '-> Printing query taxan Phylostratum Scores results to [ $out.qry_node_phylostratumscores.txt ]");
 
 ## normalise the scores by the sum of their logs, i.e., product of their probabilities.
 unless (defined $hard_threshold) { # do not do it if using hard_threshold because the matrix has a single entry per gene equal to 1.
@@ -223,7 +227,7 @@ print OUT "\n";
 close(OUT);
 
 
-print_OUT("Printing results to [ $out.txt ]");
+print_OUT("   '-> Printing results to [ $out.txt ]");
 open(OUT,">$out.txt") or die $!;
 # print colnames of output file
 
@@ -237,6 +241,10 @@ foreach my $qry_gene (keys %S){
     $gene_counter++;
 }
 close(OUT);
+
+if (not defined $gi_tax_id_info){
+    print_OUT("   '-> Sequence to taxonomy information has bee stored at [ $out.gi_tax_id.csv ]");
+}
 
 
 print_OUT("Done");
