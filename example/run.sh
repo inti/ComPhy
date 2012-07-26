@@ -7,7 +7,6 @@ my_perl ../phylostratiphy.pl \
     -tax_folder ncbi_tax_data/ \
     -prot_only \
     -query_taxon 103372 \
-    -virus_list example/virus_list.tx \
     -out test_phylostratiphy
 
 
