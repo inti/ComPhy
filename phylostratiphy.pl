@@ -1,16 +1,11 @@
 #!/usr/bin/perl -w
 use strict;
-use Bio::TreeIO; 
 use Bio::DB::Taxonomy;
-use Bio::Phylo::IO 'parse';
-use Data::Dumper;
 use Getopt::Long;
 use Pod::Usage;
 use PDL;
 use PDL::Matrix;
 use PDL::NiceSlice;
-use MLDBM qw(DB_File Storable);
-use Fcntl;
 
 use constant E_CONSTANT => log(10);
 # local modules
@@ -330,7 +325,7 @@ Print complete documentation
 
 =item B<-blastdbcmd>
 
- Path to blastdbcmd executable
+ Path to blastdbcmd executable. If not provided it will be assumed that it can found with the command `which blastdbcmd`
 
 =item B<-gi_tax_id>
  
