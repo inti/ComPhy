@@ -1,16 +1,11 @@
 #!/usr/bin/perl -w
 use strict;
-use Bio::TreeIO; 
 use Bio::DB::Taxonomy;
-use Bio::Phylo::IO 'parse';
-use Data::Dumper;
 use Getopt::Long;
 use Pod::Usage;
 use PDL;
 use PDL::Matrix;
 use PDL::NiceSlice;
-use MLDBM qw(DB_File Storable);
-use Fcntl;
 
 use constant E_CONSTANT => log(10);
 # local modules
@@ -256,14 +251,14 @@ __END__
 
 =head1 NAME
  
- Perl implementation of PAGE: parametric analysis of gene set enrichment. As bonus includes strategies to correct for gene clusters.
+ Perl implementation of the PhyloStratigraphy comparative genomics methods.
  
 =head1 DESCRIPTION
 
-B<This program> will perform a Phylostratigraphy analysis. It provides a implementation and extension of the original methodology of Domazet-Loso et. al. (2003).
- Please see readme for information on Perl module requirments and input and output files.
+B<This program> will perform a PhyloStratigraphy analysis. It provides a implementation and extensions of the original methodology of Domazet-Loso et. al. (2003).
+ Please see README for information on Perl module requirments and some additional information.
  
- For comments or complains please contact intipedroso@gmail.com
+ Comments, suggestions or complains you be addressed to IntiPedroso@gmail.com
  
  References:
   Domazet-Loso, T., and Tautz, D. (2003). An evolutionary analysis of orphan genes in Drosophila. Genome Res. 13, 2213-2219.
@@ -275,15 +270,18 @@ B<This program> will perform a Phylostratigraphy analysis. It provides a impleme
     General options
     -h, --help		print help message
     -m, --man		print complete documentation
+ 
     Input Files
-    -blast         Output from blast
-    -tax_folder    Folder with taxonomy information
-    -blast_format  Format of blast output
-    -virus_list    List with ids of viral taxons
-    -query_taxon   Taxnomy identifier of query specie.
+    -blast         Output from blast (Required)
+    -tax_folder    Folder with taxonomy information (Required)
+    -blast_format  Format of blast output (Not yet functional)
+    -query_taxon   Taxnomy identifier of query specie. (Required)
+    -seq_db        Path or name to sequence db in blast format. (Optional)
+    -blastdbcmd    Path to blastdbcmd executable (Optional)
+    -gi_tax_id     Tabe with taxonomy information for the target sequences of the blast output (Optional)
  
     Output Files
-    -o, --o        Name of output files
+    -o, --o        Name of output files (Required)
 
     Analysis options
     -hard, --hard_threshold    Switches to original methodology of Domazet-Loso et. al. (2003)
@@ -319,8 +317,22 @@ Print complete documentation
  
 =item B<-query_taxon>   
  
- Taxnomy identifier of query specie.
+ Taxnomy identifier of query specie. User must use the id provided by the NCBI Taxonomy database, e.g, human = 9606 and Acromyrmex echinatior = 103372.
  
+=item B<-seq_db> 
+ 
+ Path or name to sequence db in blast format. If nor provided it will be set to 'nr' and it will be assumed that you have set the  ~/.ncbirc as indicated on the BLAST documentation with the path to the folder where the sequence databased are stored, i.e., the $BLASTDB enviromental variable has been set.
+
+=item B<-blastdbcmd>
+
+ Path to blastdbcmd executable. If not provided it will be assumed that it can found with the command `which blastdbcmd`
+
+=item B<-gi_tax_id>
+ 
+ Tabe with taxonomy information for the target sequences of the blast output. This table has the format obtained by extrating the taxonomy information the sequence db with the following command (as it is done internally by the software)
+ >blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch file_with_sequence_ids.txt -db seq_db -out output_file.csv
+ where seq_db is whatever the -seq_db as been set to and output_file.csv is the file that you need to provide to the -gi_tax_id option. If this option is not provided this command will be run internally and you will get the file as "out".gi_tax_id.csv, where "out" is the whatever you provide to the option -o, --out
+
 =item B<-o, --out>
  
  Name of output files
