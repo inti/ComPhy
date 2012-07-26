@@ -147,15 +147,13 @@ if (defined $virus_list){
 my $query_taxon = $db->get_taxon(-taxonid => $user_provided_query_taxon_id);
 
 print_OUT("Starting to calculate PhyloStratum Scores");
-print_OUT("Identifiying last common ancestors between [ " . $query_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
-print_OUT("   '-> Building tree with query and target species");
-
-print_OUT("   '-> Finding LCAs");
+print_OUT("Will identifiying last common ancestors between [ " . $query_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
 # tax counter is number of taxon minus 1 because the taxon counter starts from 0;
 my $taxon_counter = (scalar (keys %$target_taxons) ) - 1;
 my %qry_ancestors = (); 
 my $matrix_number = 0;
-foreach my $taxon ( reverse $tree_functions->get_lineage_nodes($query_taxon) ){
+# add query species first
+foreach my $taxon ( ($query_taxon,reverse $tree_functions->get_lineage_nodes($query_taxon)) ){
     # here matrix numbers increase from tip to root of tree.
     $qry_ancestors{ $taxon->id } = { 'taxon' => $taxon, 'matrix_number' => $matrix_number++, 'scientific_name' => $taxon->scientific_name };
 }
@@ -177,8 +175,7 @@ foreach my $qry_gene (keys %S){
         # get some info about the target taxon and the sequence
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
         my $subject_gi = $seq_to_tax_id->{$subject_taxid}->{'gi'};
-        # next if hits is with qry taxon.
-        next if ( $subject_taxid == $query_taxon->id); # CHECK THIS IS RIGHT
+
         # do not query for taxons from db more than once
         my $subject_taxon_from_db;
         if (not exists $NODES{ $subject_taxid } ){
