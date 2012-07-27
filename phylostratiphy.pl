@@ -178,6 +178,7 @@ foreach my $qry_gene (keys %S){
 	} 
 	if (not defined $subject_taxon_from_db) {
 		print_OUT("\nDid not find a taxon for target specie with id [ $subject_taxid ] and name [ $subject_name ]");
+		$LCA{ $subject_taxid } = 'none';
 		next;
 	}
         if (not exists $LCA{ $subject_taxid }){
