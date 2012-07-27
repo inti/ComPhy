@@ -128,6 +128,8 @@ my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis]
 # get taxon information for the taxon of the query sequences.
 my $query_taxon = $db->get_taxon(-taxonid => $user_provided_query_taxon_id);
 
+my $test = $db->get_taxon(-taxonid => '411779');
+
 print_OUT("Starting to calculate PhyloStratum Scores");
 print_OUT("   '-> Will identifiying last common ancestors between [ " . $query_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
 # tax counter is number of taxon minus 1 because the taxon counter starts from 0;
@@ -161,7 +163,7 @@ foreach my $qry_gene (keys %S){
         # get some info about the target taxon and the sequence
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
         my $subject_gi = $seq_to_tax_id->{$subject_taxid}->{'gi'};
-
+	my $subject_name = $seq_to_tax_id->{$subject_taxid}->{'scientific_name'};
         # do not query for taxons from db more than once
         my $subject_taxon_from_db;
         if (not exists $NODES{ $subject_taxid } ){
@@ -170,7 +172,14 @@ foreach my $qry_gene (keys %S){
         } else {
             $subject_taxon_from_db = $TAXON{ $subject_taxid };
         }
-        
+        if (not defined $subject_taxon_from_db) {
+	    $subject_taxon_from_db = $db->get_taxon(-name => $subject_taxid);
+            $TAXON{ $subject_taxid } = $subject_taxon_from_db;
+	} 
+	if (not defined $subject_taxon_from_db) {
+		print_OUT("\nDid not find a taxon for target specie with id [ $subject_taxid ] and name [ $subject_name ]");
+		next;
+	}
         if (not exists $LCA{ $subject_taxid }){
             my $lca = $tree_functions->get_lca( ($subject_taxon_from_db,$query_taxon) );
             if (not defined $lca){
