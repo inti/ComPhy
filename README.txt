@@ -10,6 +10,9 @@
 	The following Perl modules are needed as requierment beyond those distributed with perl:
 	- PDL 
 	- Bio::DB::Taxonomy # part of BioPerl distribution
+	- Bio::LITE::Taxonomy 
+	- Bio::LITE::Taxonomy::NCBI 
+	- Bio::LITE::Taxonomy::NCBI::Gi2taxid
 
 	Both modules are available at CPAN. For additional information on installing PDL see pdl.perl.org
 
