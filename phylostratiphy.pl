@@ -128,7 +128,6 @@ my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis]
 # get taxon information for the taxon of the query sequences.
 my $query_taxon = $db->get_taxon(-taxonid => $user_provided_query_taxon_id);
 
-my $test = $db->get_taxon(-taxonid => '411779');
 
 print_OUT("Starting to calculate PhyloStratum Scores");
 print_OUT("   '-> Will identifiying last common ancestors between [ " . $query_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
