@@ -16,8 +16,28 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw( get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw( get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw( get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
+@EXPORT_OK = qw( get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+
+sub get_lca_from_lineages {
+    my @l = @_;
+    if ($l[0]->[-1] eq $l[1]->[-1]){
+        return($l[0]->[-1]);
+    } elsif ($l[0]->[0] ne $l[1]->[0]){
+     return( "diff_root" );
+    }
+    my $size1 = scalar @{$l[0]};
+    my $size2 = scalar @{$l[1]};
+    my $lca = undef;
+    for (my $i = 0; $i < 999_999; $i++){
+        last if ($i > $size1-1);
+        last if ($i > $size2-1);
+        if ( $l[0]->[$i] eq $l[1]->[$i] ){
+            $lca = $l[0]->[$i - 1] if ($i > 0);
+        }
+    }
+    return($lca);
+}
 
 sub return_all_Leaf_Descendents {
     my $taxon = shift;
