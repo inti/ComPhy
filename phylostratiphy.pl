@@ -1,13 +1,18 @@
 #!/usr/bin/perl -w
 use strict;
 use Bio::DB::Taxonomy;
+use Bio::LITE::Taxonomy;
+use Bio::LITE::Taxonomy::NCBI;
+use Bio::DB::EUtilities;
 use Getopt::Long;
 use Pod::Usage;
 use PDL;
 use PDL::Matrix;
 use PDL::NiceSlice;
+use Data::Dumper;
 
 use constant E_CONSTANT => log(10);
+my $EMAIL = 'intipedroso@gmail.com';
 # local modules
 
 use PhyloStratiphytUtils;
@@ -48,8 +53,11 @@ print_OUT("Mapping sequence ids to taxonomy ids");
 print_OUT("   '-> Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
-my $db = Bio::DB::Taxonomy->new(-source => 'flatfile', -nodesfile => $nodesfile, -namesfile => $namefile);
+my $db = "";
 my $tree_functions = Bio::Tree::Tree->new(); # load some tree functions
+
+my $taxNCBI = Bio::LITE::Taxonomy::NCBI->new( db=>"NCBI", names=> $namefile, nodes=>$nodesfile, dict=>"$tax_folder/gi_taxid_prot.bin");
+my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
 
 ### define some variables to start storing the results
 
@@ -57,10 +65,13 @@ my %S = (); # hash will store to score for each species.
 
 print_OUT("Starting to parse blast output");
 
+my %gi_taxData = ();
+my %lineages = ();
 my %target_taxons = ();
 my $seq_counter = 0;
 my %hits_gis = (); # store the gis of the hits
 my %largest_hit_values = ('score' => -1, 'e_value' => 10000, 'p_value' => 1 );
+my %ids_not_found = ();
 # loop over blast results.
 # for each hit we will store the log(p-value) of the blast hit for each taxon of the tartget sequence.
 foreach my $file (@$blast_out){
@@ -104,30 +115,116 @@ foreach my $file (@$blast_out){
         if (defined $hard_threshold){
             next if ($data[ $fields{'evalue'}] > $hard_threshold);
         }
+        # get the taxid and lineage for the sequence.
+        if (not defined $gi_taxData{ $subject_id[1] }){
+            my $sbjct_taxid = $taxNCBI->get_taxid( $subject_id[1] );
+            if ($sbjct_taxid == 0){
+                push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
+                next;
+                # if tax id not found
+                # try to get it using the accession
+                my ($gi) = get_taxid_from_acc($subject_id[3]);
+                next if ($gi == 0); # next if that fails as well.
+                #$subject_id[1] = $gi;
+                $sbjct_taxid = $taxNCBI->get_taxid( $gi );
+            }
+            $gi_taxData{ $subject_id[1] } = { 'lineage' => [], 'tax_id' => $sbjct_taxid, 'lca_with_qry' => ""};
+        }
+        if (not defined $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }){
+            my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
+            if (scalar @sbjct_lineage == 0){
+                push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
+                next;
+                my $gi = get_taxid_from_acc($subject_id[3]);
+                next if ($gi == 0);
+                $gi_taxData{ $subject_id[1] }->{'tax_id'} = $taxNCBI->get_taxid( $gi );
+                my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
+            }
+            my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+            next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+            $gi_taxData{ $subject_id[1] }->{'lineage'} = \@sbjct_lineage;
+            $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lca;
+            $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} } = $gi_taxData{ $subject_id[1] }->{'tax_id'};
+        } else {
+            $gi_taxData{ $subject_id[1] }->{'lineage'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} ;
+            $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} ;
+        }
         # get the p-value for the hit from the e-value.
         my $e_value = pdl $data[ $fields{'evalue'}];
         my $p_value = pdl E_CONSTANT**(-$e_value);
         $p_value = pdl 1 - $p_value;
         $p_value = pdl $e_value if ($p_value == 0);
         my $score = -1*($p_value->log) * $coverage;
-        push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[3], 'score' => $score, 'p_value' => $p_value, 'e_value' => $e_value };
-        if ($e_value > 0 and $score >  $largest_hit_values{'score'}){
+        push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[1], 'score' => $score, 'p_value' => $p_value, 'e_value' => $e_value };
+        if ($e_value > 0 and $score > $largest_hit_values{'score'}){
             %largest_hit_values = ('score' => $score->list, 'e_value' => $e_value->list, 'p_value' => $p_value->list );
         }
         $hits_gis{$subject_id[1]} = '';
     }
 }
 
-# check of entries equal to infinite. this happens when the e-value is equal to 0.
-# on this cases we will replace the inf for the largest score available and its corresponding e-value. 
+my @accs = ();
+my %accs_to_gi = ();
+foreach my $hidden (keys %ids_not_found){
+    my @subject_id = split( /\|/,$hidden );
+    push @accs, ($subject_id[3] =~ m/(.*)\.\d+$/);
+    $accs_to_gi{ $accs[-1] } = $subject_id[1];
+}
+if (scalar @accs > 0){
+    my $factory = Bio::DB::EUtilities->new( -eutil => 'esearch',
+                                            -email => $EMAIL,
+                                            -db    => 'protein',
+                                            -term  => join(',',@accs) );
+    my @uids = $factory->get_ids;
+    $factory->reset_parameters(-eutil => 'esummary', -db => 'protein', -id => \@uids);
+    while (my $ds = $factory->next_DocSum) {
+        my ($taxid) = $ds->get_contents_by_name("TaxId");
+        my ($caption) = $ds->get_contents_by_name("Caption");
+        if (not defined $lineages{ $taxid }){
+            my @sbjct_lineage = $taxNCBI->get_taxonomy( $taxid );
+            my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+            next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+            $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = \@sbjct_lineage;
+            $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lca;
+            $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
+            $lineages{ $taxid }->{'lca_with_qry'} = $lca;
+        }
+    }
+}
+print Dumper(%ids_not_found);
+getc;
 
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
+
+my %qry_ancestors_ranks = ();
+my $c = 0;
+map { $qry_ancestors_ranks{$_} = $c++;   } @ql;
+
+my %PhyloStratum_scores = ();
+foreach my $qry_seq (keys %S) {
+    my @ranks = sort {$a <=> $b} map { $qry_ancestors_ranks{ $gi_taxData{$_->{'subject_id'}}->{'lca_with_qry'} }; } @{$S{$qry_seq}};
+    my @phyloScores = list zeroes scalar @ql;
+    $phyloScores[$ranks[0]] = 1;
+    $PhyloStratum_scores{$qry_seq} = \@phyloScores;
+}
+
+print "ID ",join " ", @ql;
+print "\n";
+print join " ", list sumover mpdl values %PhyloStratum_scores;
+print "\n";
+exit;
+
+# TODO:
+#1 print out output for hard coded analysis.
+#2 solve issues with gi not found due to changes on the sequence db
+#3 implement soft-coded
+
+
 
 my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis],$blastdbcmd,$seq_db,$out,$gi_tax_id_info);
 
 # get taxon information for the taxon of the query sequences.
 my $query_taxon = $db->get_taxon(-taxonid => $user_provided_query_taxon_id);
-
 
 print_OUT("Starting to calculate PhyloStratum Scores");
 print_OUT("   '-> Will identifiying last common ancestors between [ " . $query_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
@@ -162,7 +259,7 @@ foreach my $qry_gene (keys %S){
         # get some info about the target taxon and the sequence
         my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
         my $subject_gi = $seq_to_tax_id->{$subject_taxid}->{'gi'};
-	my $subject_name = $seq_to_tax_id->{$subject_taxid}->{'scientific_name'};
+        my $subject_name = $seq_to_tax_id->{$subject_taxid}->{'scientific_name'};
         # do not query for taxons from db more than once
         my $subject_taxon_from_db;
         if (not exists $NODES{ $subject_taxid } ){

@@ -47,7 +47,7 @@ sub get_lca_from_lineages {
     if ($l[0]->[-1] eq $l[1]->[-1]){
         return($l[0]->[-1]);
     } elsif ($l[0]->[0] ne $l[1]->[0]){
-     return( "diff_root" );
+        return( "diff_root" );
     }
     my %ancestors = ();
     map { $ancestors{$_} = 1 } @{$l[0]};
