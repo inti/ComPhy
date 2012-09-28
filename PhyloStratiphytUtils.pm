@@ -16,26 +16,56 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw( get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw( get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw( get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
+@EXPORT_OK = qw( get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
 
+sub get_taxid_from_acc {
+    my $prot_id = shift;
+    my ($acc) = ($prot_id =~ m/(.*)\.\d+$/);
+    my $eutil = Bio::DB::EUtilities->new(
+                                            -eutil      => 'esearch',
+                                            -term       => $acc,
+                                            -db         => 'protein',
+                                            -retmax     => 10,
+                                            -email      => 'intipedroso@gmail.com');
+    my ($id) = $eutil->get_ids;
+    if ($eutil->get_count == 1){
+        return($id);
+    } elsif ($eutil->get_count > 1){
+        print_OUT("I found multiple entries on db. do not know what to do with [ $prot_id ]");
+        return(0);
+    }else {
+        print_OUT("I cannot find tax_id for this target sequence [ $prot_id ]");
+        return(0);
+    }
+}
 sub get_lca_from_lineages {
+    # this rountine finds the LCA between two species.
+    # it uses two arrays with the ancestors names ordered from older to newer.
+    # it iterates from older to newer until it finds a ancestor that is different.
     my @l = @_;
     if ($l[0]->[-1] eq $l[1]->[-1]){
         return($l[0]->[-1]);
     } elsif ($l[0]->[0] ne $l[1]->[0]){
      return( "diff_root" );
     }
-    my $size1 = scalar @{$l[0]};
-    my $size2 = scalar @{$l[1]};
-    my $lca = undef;
-    for (my $i = 0; $i < 999_999; $i++){
-        last if ($i > $size1-1);
-        last if ($i > $size2-1);
-        if ( $l[0]->[$i] eq $l[1]->[$i] ){
-            $lca = $l[0]->[$i - 1] if ($i > 0);
-        }
-    }
+    my %ancestors = ();
+    map { $ancestors{$_} = 1 } @{$l[0]};
+    my $number_diff_ancestors = grep(!defined($ancestors{$_}),@{$l[1]});;
+    my $lca = $l[1]->[-(1 + $number_diff_ancestors)];
+    ## Old style of doing it.
+    #my $size1 = scalar @{$l[0]};
+    #my $size2 = scalar @{$l[1]};
+#    for (my $i = 0; $i < 999_999; $i++){
+#        last if ($i > $size1-1);
+#        last if ($i > $size2-1);
+#        print "$l[0]->[$i] <=> $l[1]->[$i]\n";
+#        if ( $l[0]->[$i] ne $l[1]->[$i] ){
+#            $lca = $l[0]->[$i - 1] if ($i > 0);
+#            getc;
+#            last;
+#        }
+#    }
     return($lca);
 }
 
