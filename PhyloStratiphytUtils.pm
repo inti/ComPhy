@@ -4,10 +4,14 @@ use warnings;
 use Carp;
 use Exporter qw (import);
 
+use constant E_CONSTANT => log(10);
+
+
 eval { 
     use DB_File;
     use Fcntl;
     use Data::Dumper;
+    use PDL;
 };
 if ($@) { 
 	print "Some libraries does not seem to be in you system. quitting\n";
@@ -16,8 +20,75 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw( get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw( get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw( parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
+@EXPORT_OK = qw( parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+
+sub parse_blast_table {
+    my $file = shift;
+    my %back = ();
+    open (FILE,$file) or die $!;
+    my %fields = ();
+    my $qry_id = "";
+    while (my $line = <FILE>){
+        # get the query id in case that there are not blast hits
+        # if line has the header of the table. split the header and keep the columns names.
+        if ($line =~ m/^#/){
+            if ($line =~ m/^# Query:/){
+                # clean up a bit the line
+                $line =~ s/^# Query: //;
+                # split the fields names on the comas.
+                my @fs = split(/\,\s/,$line);
+                $qry_id = $fs[0];
+            }
+            if ($line =~ m/^# 0 hits found/){
+                @{ $back{ $qry_id } } = [];
+            }
+            if ($line =~ m/^# Fields:/){
+                # clean up a bit the line
+                $line =~ s/^# Fields: //;
+                $line =~ s/\s$//;
+                $line =~ s/\.//g;
+                $line =~ s/\%/percent/g;
+                # split the fields names on the comas.
+                my @fs = split(/\,\s/,$line);
+                # store the field names and positions on a hash
+                for (my $i = 0; $i < scalar @fs; $i++) {
+                    $fs[$i] =~ s/\s+/_/g;
+                    $fields{$fs[$i]} = $i;
+                }
+            }
+            next;
+        }
+        chomp($line);
+        my @data = split(/\t+/,$line);
+        # remove the frame of the db hit, we only need to know about the frame of the query seq
+        my $frame = '';
+        if (exists $fields{'query/sbjct_frames'}){
+            $data[ $fields{'query/sbjct_frames'} ] =~ s/\/\w+$//;
+            $frame = $data[ $fields{'query/sbjct_frames'} ];
+        }
+        # extract the indetifiers of the target sequence
+        my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
+        # define coverage as the fraction of the target sequence (subject) covered by the query sequence
+        my $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}];
+        # get the p-value for the hit from the e-value.
+        my $e_value = pdl $data[ $fields{'evalue'}];
+        my $p_value = pdl E_CONSTANT**(-$e_value);
+        $p_value = pdl 1 - $p_value;
+        $p_value = pdl $e_value if ($p_value == 0);
+        my $score = -1*($p_value->log) * $coverage;
+        push @{ $back{ $data[ $fields{'query_id'}] }  }, {  'subject_id' => $subject_id[1],
+                                                            'subject' => $data[ $fields{'subject_id'}],
+                                                            'score' => $score,
+                                                            'pvalue' => $p_value,
+                                                            'evalue' => $e_value,
+                                                            'coverage' => $coverage,
+                                                            'frames' => $frame,
+                                                          };
+
+    }
+    return(\%back);
+}
 
 sub get_taxid_from_acc {
     my $prot_id = shift;

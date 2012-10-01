@@ -46,7 +46,7 @@ chomp($blastdbcmd);
 defined $seq_db or $seq_db = "nr"; # assuming proteins and that path to dbs is on a enviromental variable
 defined $hard_threshold or $hard_threshold = 1e-3;
 defined $soft_threshold and $hard_threshold = undef;
-
+defined $blast_format or $blast_format = 'table';
 print_OUT("Reading taxonomy information");
 
 # load tree of life information, both node' connections and names of nodes.
@@ -58,100 +58,159 @@ my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
 
 ### define some variables to start storing the results
 
-my %S = (); # hash will store to score for each species.
-
 print_OUT("Starting to parse blast output");
 
-my %gi_taxData = (); # store taxonomy information for each target gi
-my %lineages = (); # each entry has a 'lca_with_qry' and a 'lineage'
-my $seq_counter = 0;
-my %ids_not_found = (); # store ids of target sequences without taxonomy information on local DBs
+my %S = (); # hash will store to score for each species.
 # loop over blast results.
 # for each hit we will store the log(p-value) of the blast hit for each taxon of the tartget sequence.
 foreach my $file (@$blast_out){
     #print_OUT("   '-> [ $file ]");
-    open (FILE,$file)or die $!;
-    my %fields = ();
-    while (my $line = <FILE>){
-        # if line has the header of the table. split the header and keep the columns names.
-        if ($line =~ m/^#/){
-            if ($line =~ m/^# Fields:/){
-                # clean up a bit the line
-                $line =~ s/^# Fields: //;
-                $line =~ s/\s$//;
-                $line =~ s/\.//g;
-                $line =~ s/\%/percent/g;
-                # split the fields names on the comas.
-                my @fs = split(/\,\s/,$line);
-                # store the field names and positions on a hash
-                for (my $i = 0; $i < scalar @fs; $i++) {
-                    $fs[$i] =~ s/\s+/_/g;
-                    $fields{$fs[$i]} = $i;
-                }
-                $seq_counter++;
-            }
-            next;
-        }
-        chomp($line);
-        my @data = split(/\t+/,$line);
-        # remove the frame of the db hit, we only need to know about the frame of the query seq
-        if (exists $fields{'query/sbjct_frames'}){
-            $data[ $fields{'query/sbjct_frames'} ] =~ s/\/\w+$//;
-        }
-        # extract the indetifiers of the target sequence
-        my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
-        # define coverage as the fraction of the target sequence (subject) covered by the query sequence
-        my $coverage = 1;
-        if (defined $use_coverage) {
-            $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}]; 
-        }
-        # if using hard threshold then remove hits by e-value
-        if (defined $hard_threshold){
-            next if ($data[ $fields{'evalue'}] > $hard_threshold);
-        }
-        # get the taxid and lineage for the sequence.
-        if (not defined $gi_taxData{ $subject_id[1] }){
-            my $sbjct_taxid = $taxNCBI->get_taxid( $subject_id[1] );
-            if ($sbjct_taxid == 0){
-                push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
-            } else {
-                $gi_taxData{ $subject_id[1] } = { 'lineage' => [], 'tax_id' => $sbjct_taxid, 'lca_with_qry' => ""};
-            }
-        }
-        if (exists $gi_taxData{ $subject_id[1] }){
-                if (not exists $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }){
-                    my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
-                    if (scalar @sbjct_lineage == 0){
-                        push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
-                    } else {
-                        my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
-                        next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
-                        $gi_taxData{ $subject_id[1] }->{'lineage'} = \@sbjct_lineage;
-                        $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lca;
-                        $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} = $lca;
-                        $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} = \@sbjct_lineage;
-                    }
-                } else {
-                    $gi_taxData{ $subject_id[1] }->{'lineage'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} ;
-                    $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} ;
-                }
-        }
-        # get the p-value for the hit from the e-value.
-        my $e_value = pdl $data[ $fields{'evalue'}];
-        my $p_value = pdl E_CONSTANT**(-$e_value);
-        $p_value = pdl 1 - $p_value;
-        $p_value = pdl $e_value if ($p_value == 0);
-        my $score = -1*($p_value->log) * $coverage;
-        push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[1],
-                                                        'score' => $score,
-                                                        'p_value' => $p_value,
-                                                        'e_value' => $e_value };
+    if ($blast_format eq 'table'){
+        my $parsed_blast_out = parse_blast_table($file);
+        @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
     }
+#    open (FILE,$file)or die $!;
+#    my %fields = ();
+#    while (my $line = <FILE>){
+#        # if line has the header of the table. split the header and keep the columns names.
+#        if ($line =~ m/^#/){
+#            if ($line =~ m/^# Fields:/){
+#                # clean up a bit the line
+#                $line =~ s/^# Fields: //;
+#                $line =~ s/\s$//;
+#        $line =~ s/\.//g;
+#        $line =~ s/\%/percent/g;
+#        # split the fields names on the comas.
+#        my @fs = split(/\,\s/,$line);
+#        # store the field names and positions on a hash
+#        for (my $i = 0; $i < scalar @fs; $i++) {
+#            $fs[$i] =~ s/\s+/_/g;
+#            $fields{$fs[$i]} = $i;
+#        }
+#        $seq_counter++;
+#    }
+#    next;
+#}
+#chomp($line);
+#my @data = split(/\t+/,$line);
+## remove the frame of the db hit, we only need to know about the frame of the query seq
+#if (exists $fields{'query/sbjct_frames'}){
+#    $data[ $fields{'query/sbjct_frames'} ] =~ s/\/\w+$//;
+#}
+## extract the indetifiers of the target sequence
+#my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
+## define coverage as the fraction of the target sequence (subject) covered by the query sequence
+#my $coverage = 1;
+#if (defined $use_coverage) {
+#    $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}];
+#}
+## if using hard threshold then remove hits by e-value
+#if (defined $hard_threshold){
+#    next if ($data[ $fields{'evalue'}] > $hard_threshold);
+#}
+## get the taxid and lineage for the sequence.
+#if (not defined $gi_taxData{ $subject_id[1] }){
+#    my $sbjct_taxid = $taxNCBI->get_taxid( $subject_id[1] );
+#    if ($sbjct_taxid == 0){
+#        push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
+#    } else {
+#        $gi_taxData{ $subject_id[1] } = { 'lineage' => [], 'tax_id' => $sbjct_taxid, 'lca_with_qry' => ""};
+#    }
+#}
+#if (exists $gi_taxData{ $subject_id[1] }){
+#    if (not exists $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }){
+#        my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
+#        if (scalar @sbjct_lineage == 0){
+#            push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
+#        } else {
+#            my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+#            next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+#            $gi_taxData{ $subject_id[1] }->{'lineage'} = \@sbjct_lineage;
+#            $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lca;
+#            $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} = $lca;
+#            $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} = \@sbjct_lineage;
+#        }
+#    } else {
+#        $gi_taxData{ $subject_id[1] }->{'lineage'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} ;
+#        $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} ;
+#    }
+#}
+## get the p-value for the hit from the e-value.
+#my $e_value = pdl $data[ $fields{'evalue'}];
+#my $p_value = pdl E_CONSTANT**(-$e_value);
+#$p_value = pdl 1 - $p_value;
+#$p_value = pdl $e_value if ($p_value == 0);
+#my $score = -1*($p_value->log) * $coverage;
+#push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[1],
+#    'score' => $score,
+#    'p_value' => $p_value,
+#    'e_value' => $e_value };
+#}
 }
 
-print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
+print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] sequences.");
 
-######## FINE TAXONOMY INFORMATION FOR IDS WITH INCOSISTENT INFORMATION ON LOCAL FILES ################
+######## FILTER BLAST HITS AND GET TAXONMY INFORMATION FOR TARGET SEQUENCES AND SPECIES.
+my %gi_taxData = (); # store taxonomy information for each target gi
+my %lineages = (); # each entry has a 'lca_with_qry' and a 'lineage'
+my $seq_counter = 0;
+my %ids_not_found = (); # store ids of target sequences without taxonomy information on local DBs
+
+while (my ($qry_seq,$blast_subjects) = each %S){
+    # loop over blast results for this query sequence
+    my $target_counter = -1; # set to -1 so that first item sets it to 0.
+    foreach my $target_seqs (@{$blast_subjects}){
+        $target_counter++;
+        ## Filter blast results.
+        # if using hard threshold then remove hits by e-value
+        if (defined $hard_threshold){
+            if ($target_seqs->{'evalue'} > $hard_threshold){
+                # flag this target sequence as not passing the filter
+                $S{ $qry_seq }->[ $target_counter ]->{'pass_hard_thresold'} = 0;
+                # if skip the taxonomy of this seq unless we are interested in doing soft-threshold method.
+                unless (defined $soft_threshold ){
+                    next;
+                }
+            } else {
+                $S{ $qry_seq }->[ $target_counter ]->{'pass_hard_thresold'} = 1;
+            }
+        }
+        if (not defined $gi_taxData{ $target_seqs->{'subject_id'} }){
+            my $sbjct_taxid = $taxNCBI->get_taxid( $target_seqs->{'subject_id'} );
+            if ($sbjct_taxid == 0){
+                push @{ $ids_not_found{ $target_seqs->{'subject'} }}, $qry_seq;
+            } else {
+                $gi_taxData{ $target_seqs->{'subject_id'} } = { 'lineage' => [],
+                                                                'tax_id' => $sbjct_taxid,
+                                                                'lca_with_qry' => ''};
+                if (not exists $lineages{ $sbjct_taxid }){
+                    my @sbjct_lineage = $taxNCBI->get_taxonomy( $sbjct_taxid );
+                    if (scalar @sbjct_lineage == 0){
+                        push @{ $ids_not_found{ $target_seqs->{'subject'} }}, $qry_seq;
+                    } else {
+                        my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql);
+                        if ($lca eq "diff_root") {# exclude those that have a different root to cell organisms.
+                            $gi_taxData{ $target_seqs->{'subject_id'} }->{'lineage'} = \@sbjct_lineage;
+                            $gi_taxData{ $target_seqs->{'subject_id'} }->{'lca_with_qry'} = $lca;
+                            next;
+                        }
+                        $gi_taxData{ $target_seqs->{'subject_id'} }->{'lineage'} = \@sbjct_lineage;
+                        $gi_taxData{ $target_seqs->{'subject_id'} }->{'lca_with_qry'} = $lca;
+                        $lineages{ $sbjct_taxid }->{'lca_with_qry'} = $lca;
+                        $lineages{ $sbjct_taxid }->{'lineage'} = \@sbjct_lineage;
+                    }
+                } else {
+                    $gi_taxData{ $target_seqs->{'subject_id'} }->{'lineage'} = $lineages{ $sbjct_taxid }->{'lineage'} ;
+                    $gi_taxData{ $target_seqs->{'subject_id'} }->{'lca_with_qry'} = $lineages{ $sbjct_taxid }->{'lca_with_qry'} ;
+                }
+            }
+        }
+    }
+
+}
+
+
+######## FIND TAXONOMY INFORMATION FOR IDS WITH INCOSISTENT INFORMATION ON LOCAL FILES ################
 # compile all ids for which taxonomy information was not found with local files.
 my @accs = ();
 my %accs_to_gi = ();
@@ -195,6 +254,9 @@ if (defined $not_use_ncbi_entrez){
                 $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lca;
                 $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
                 $lineages{ $taxid }->{'lca_with_qry'} = $lca;
+            } else {
+                $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = $lineages{ $taxid }->{'lineage'};
+                $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
             }
         }
     }
@@ -202,15 +264,30 @@ if (defined $not_use_ncbi_entrez){
 }
 
 ############## PROCEED TO FINISH CALCULATIONS ##################
-# Get the oldest stratum for every gene.
+# Get the oldest stratum for every gene
 my %qry_ancestors_ranks = ();
 my $c = 0;
 map { $qry_ancestors_ranks{$_} = $c++;   } @ql;
 my %PhyloStratum_scores = ();
 foreach my $qry_seq (keys %S) {
-    my @ranks = sort {$a <=> $b} map { $qry_ancestors_ranks{ $gi_taxData{$_->{'subject_id'}}->{'lca_with_qry'} }; } @{$S{$qry_seq}};
+    my $oldest_stratum = scalar @ql;
+    foreach my $target_seq ( @{ $S{ $qry_seq } } ){
+        #print Dumper($target_seq);
+        #        getc;
+        next if ($target_seq->{'pass_hard_thresold'} == 0);
+        if (not exists $gi_taxData{ $target_seq->{'subject_id'}}){
+            print_OUT("Something went wrong. I cannot find tax infor for this sequence after having done all the work. [ $target_seq->{'subject'} ]");
+            next;
+        }
+        my $lca = $gi_taxData{ $target_seq->{'subject_id'} }->{'lca_with_qry'};
+        next if ($lca eq "diff_root");
+        my $target_seq_stratum = $qry_ancestors_ranks{ $lca };
+        if ($target_seq_stratum < $oldest_stratum) {
+            $oldest_stratum = $target_seq_stratum ;
+        }
+    }
     my @phyloScores = list zeroes scalar @ql;
-    $phyloScores[$ranks[0]] = 1;
+    $phyloScores[ $oldest_stratum ] = 1;
     $PhyloStratum_scores{$qry_seq} = \@phyloScores;
 }
 print_OUT("Finished calculating hard coded scores");
@@ -243,7 +320,8 @@ print_OUT("Done");
 exit;
 
 # TODO:
-#3 implement soft-coded
+# 3- implement soft-coded
+# 4- guess specie
 
 
 __END__
