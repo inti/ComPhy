@@ -1,20 +1,24 @@
 #!/usr/bin/perl -w
 use strict;
-use Bio::DB::Taxonomy;
+use Bio::LITE::Taxonomy;
+use Bio::LITE::Taxonomy::NCBI;
+use Bio::DB::EUtilities;
 use Getopt::Long;
 use Pod::Usage;
 use PDL;
 use PDL::Matrix;
 use PDL::NiceSlice;
+use Data::Dumper;
 
 use constant E_CONSTANT => log(10);
+my $EMAIL = 'intipedroso@gmail.com';
 # local modules
 
 use PhyloStratiphytUtils;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
-        $use_coverage, $hard_threshold,$gi_tax_id_info,$blastdbcmd,
-        $seq_db);
+        $use_coverage, $hard_threshold, $soft_threshold, $gi_tax_id_info,$blastdbcmd,
+        $seq_db, $not_use_ncbi_entrez );
 
 GetOptions(
     'help' => \$help,
@@ -26,9 +30,11 @@ GetOptions(
     'query_taxon=s' => \$user_provided_query_taxon_id,
     'out|o=s' => \$out,
     'hard_threshold|hard=f' => \$hard_threshold,
+    'soft_threshold|soft' => \$soft_threshold,
     'gi_tax_id=s' => \$gi_tax_id_info,  # dysbindin.tax_info.csv
     'blastdbcmd=s' => \$blastdbcmd,
     'seq_db|db=s' => \$seq_db,
+    'no_ncbi_entrez' => \$not_use_ncbi_entrez,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -38,18 +44,17 @@ pod2usage(-exitstatus => 2, -verbose => 2) if (defined $man);
 defined $blastdbcmd or $blastdbcmd = `which blastdbcmd`;
 chomp($blastdbcmd);
 defined $seq_db or $seq_db = "nr"; # assuming proteins and that path to dbs is on a enviromental variable
+defined $hard_threshold or $hard_threshold = 1e-3;
+defined $soft_threshold and $hard_threshold = undef;
 
-print_OUT("Parsing taxonomy information");
-
-print_OUT("Mapping sequence ids to taxonomy ids");
-
+print_OUT("Reading taxonomy information");
 
 # load tree of life information, both node' connections and names of nodes.
 print_OUT("   '-> Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
-my $db = Bio::DB::Taxonomy->new(-source => 'flatfile', -nodesfile => $nodesfile, -namesfile => $namefile);
-my $tree_functions = Bio::Tree::Tree->new(); # load some tree functions
+my $taxNCBI = Bio::LITE::Taxonomy::NCBI->new( db=>"NCBI", names=> $namefile, nodes=>$nodesfile, dict=>"$tax_folder/gi_taxid_prot.bin");
+my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
 
 ### define some variables to start storing the results
 
@@ -57,10 +62,10 @@ my %S = (); # hash will store to score for each species.
 
 print_OUT("Starting to parse blast output");
 
-my %target_taxons = ();
+my %gi_taxData = (); # store taxonomy information for each target gi
+my %lineages = (); # each entry has a 'lca_with_qry' and a 'lineage'
 my $seq_counter = 0;
-my %hits_gis = (); # store the gis of the hits
-my %largest_hit_values = ('score' => -1, 'e_value' => 10000, 'p_value' => 1 );
+my %ids_not_found = (); # store ids of target sequences without taxonomy information on local DBs
 # loop over blast results.
 # for each hit we will store the log(p-value) of the blast hit for each taxon of the tartget sequence.
 foreach my $file (@$blast_out){
@@ -104,157 +109,142 @@ foreach my $file (@$blast_out){
         if (defined $hard_threshold){
             next if ($data[ $fields{'evalue'}] > $hard_threshold);
         }
+        # get the taxid and lineage for the sequence.
+        if (not defined $gi_taxData{ $subject_id[1] }){
+            my $sbjct_taxid = $taxNCBI->get_taxid( $subject_id[1] );
+            if ($sbjct_taxid == 0){
+                push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
+            } else {
+                $gi_taxData{ $subject_id[1] } = { 'lineage' => [], 'tax_id' => $sbjct_taxid, 'lca_with_qry' => ""};
+            }
+        }
+        if (exists $gi_taxData{ $subject_id[1] }){
+                if (not exists $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }){
+                    my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
+                    if (scalar @sbjct_lineage == 0){
+                        push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
+                    } else {
+                        my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+                        next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+                        $gi_taxData{ $subject_id[1] }->{'lineage'} = \@sbjct_lineage;
+                        $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lca;
+                        $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} = $lca;
+                        $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} = \@sbjct_lineage;
+                    }
+                } else {
+                    $gi_taxData{ $subject_id[1] }->{'lineage'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} ;
+                    $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} ;
+                }
+        }
         # get the p-value for the hit from the e-value.
         my $e_value = pdl $data[ $fields{'evalue'}];
         my $p_value = pdl E_CONSTANT**(-$e_value);
         $p_value = pdl 1 - $p_value;
         $p_value = pdl $e_value if ($p_value == 0);
         my $score = -1*($p_value->log) * $coverage;
-        push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[3], 'score' => $score, 'p_value' => $p_value, 'e_value' => $e_value };
-        if ($e_value > 0 and $score >  $largest_hit_values{'score'}){
-            %largest_hit_values = ('score' => $score->list, 'e_value' => $e_value->list, 'p_value' => $p_value->list );
-        }
-        $hits_gis{$subject_id[1]} = '';
+        push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[1],
+                                                        'score' => $score,
+                                                        'p_value' => $p_value,
+                                                        'e_value' => $e_value };
     }
 }
-
-# check of entries equal to infinite. this happens when the e-value is equal to 0.
-# on this cases we will replace the inf for the largest score available and its corresponding e-value. 
 
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
 
-my ($seq_to_tax_id,$target_taxons) = fetch_tax_ids_from_blastdb([keys %hits_gis],$blastdbcmd,$seq_db,$out,$gi_tax_id_info);
-
-# get taxon information for the taxon of the query sequences.
-my $query_taxon = $db->get_taxon(-taxonid => $user_provided_query_taxon_id);
-
-my $test = $db->get_taxon(-taxonid => '411779');
-
-print_OUT("Starting to calculate PhyloStratum Scores");
-print_OUT("   '-> Will identifiying last common ancestors between [ " . $query_taxon->scientific_name . " ] and [ " . scalar (keys %$target_taxons) . " ] target taxons");
-# tax counter is number of taxon minus 1 because the taxon counter starts from 0;
-my $taxon_counter = (scalar (keys %$target_taxons) ) - 1;
-my %qry_ancestors = (); 
-my $matrix_number = 0;
-# add query species first
-foreach my $taxon ( ($query_taxon,reverse $tree_functions->get_lineage_nodes($query_taxon)) ){
-    # here matrix numbers increase from tip to root of tree.
-    $qry_ancestors{ $taxon->id } = { 'taxon' => $taxon, 'matrix_number' => $matrix_number++, 'scientific_name' => $taxon->scientific_name };
+######## FINE TAXONOMY INFORMATION FOR IDS WITH INCOSISTENT INFORMATION ON LOCAL FILES ################
+# compile all ids for which taxonomy information was not found with local files.
+my @accs = ();
+my %accs_to_gi = ();
+foreach my $hidden (keys %ids_not_found){
+    my @subject_id = split( /\|/,$hidden );
+    push @accs, ($subject_id[3] =~ m/(.*)\.\d+$/);
+    $accs_to_gi{ $accs[-1] } = $subject_id[1];
 }
-
-print_OUT("   '-> Finishing to calculate scores");
-
-my $M = zeroes scalar (keys %S), scalar (keys %qry_ancestors);
-
-# here store the lca between qry and target taxons.
-my %LCA = ();
-my %TAXON = ();
-my %NODES = ();
-my $gene_counter = 0;
-my $n_genes = scalar (keys %S);
-foreach my $qry_gene (keys %S){
-    # print counter
-    print scalar localtime,"\t",progress_bar($gene_counter,$n_genes);
-    
-    my $oldest_lca_matrix_pos = -1;
-    foreach my $hit (@{ $S{$qry_gene} }){
-        # skip if info about the hits was not recovered from the sequence db
-        next if (not exists $seq_to_tax_id->{ $hit->{'subject_id'} } );
-        # get some info about the target taxon and the sequence
-        my $subject_taxid = $seq_to_tax_id->{$hit->{'subject_id'}}->{'taxid'};
-        my $subject_gi = $seq_to_tax_id->{$subject_taxid}->{'gi'};
-	my $subject_name = $seq_to_tax_id->{$subject_taxid}->{'scientific_name'};
-        # do not query for taxons from db more than once
-        my $subject_taxon_from_db;
-        if (not exists $NODES{ $subject_taxid } ){
-            $subject_taxon_from_db = $db->get_taxon(-taxonid => $subject_taxid);
-            $TAXON{ $subject_taxid } = $subject_taxon_from_db;
-        } else {
-            $subject_taxon_from_db = $TAXON{ $subject_taxid };
-        }
-        if (not defined $subject_taxon_from_db) {
-	    $subject_taxon_from_db = $db->get_taxon(-name => $subject_taxid);
-            $TAXON{ $subject_taxid } = $subject_taxon_from_db;
-	} 
-	if (not defined $subject_taxon_from_db) {
-		print_OUT("\nDid not find a taxon for target specie with id [ $subject_taxid ] and name [ $subject_name ]");
-		next;
-	}
-        if (not exists $LCA{ $subject_taxid }){
-            my $lca = $tree_functions->get_lca( ($subject_taxon_from_db,$query_taxon) );
-            if (not defined $lca){
-                my @lineage = $tree_functions->get_lineage_nodes($subject_taxon_from_db);
-                if ($lineage[0] ne "cellular organisms") {
-                    $LCA{ $subject_taxid } = 'none';
-                    next;
-                }
-            }
-            $LCA{ $subject_taxid } = $lca;
-        }
-        next if ($LCA{ $subject_taxid } eq 'none'); # skip if previously stablished that there is not an LCA.
-
-        my $lca_matrix_pos = $qry_ancestors{ $LCA{ $subject_taxon_from_db->id }->id }->{'matrix_number'} ; 
-        next if (not defined $lca_matrix_pos);
-        if (defined $hard_threshold) {
-            $oldest_lca_matrix_pos = $lca_matrix_pos if ($oldest_lca_matrix_pos < $lca_matrix_pos); # record the oldest LCA of the hits of this gene.
-        } else {
-            if ($hit->{'score'} eq "inf"){
-                $M($gene_counter,$lca_matrix_pos) += $largest_hit_values{'score'};
-            } else {
-                $M($gene_counter,$lca_matrix_pos) += $hit->{'score'};
+print_OUT("There were [ " . scalar @accs . " ] subject ids from blast search unmatched with local taxonomy DBs");
+if (defined $not_use_ncbi_entrez){
+    print_OUT("   '-> Printing this ids to [ $out.ids_without_taxonomy_information.txt ].");
+    open(OUT,">$out.ids_without_taxonomy_information.txt") or die $!;
+    print OUT join "\n", @accs;
+    close(OUT);
+} else {
+    print_OUT("   '-> Using NCBI webservices to get taxonomy information on them.");
+    if (scalar @accs > 0){
+        my $factory = Bio::DB::EUtilities->new( -eutil => 'esearch',
+                                                -email => $EMAIL,
+                                                -db    => 'protein',
+                                                -retmax     => 10*(scalar @accs),
+                                                -term  => join(',',@accs),
+                                                -usehistory => 'y');
+        
+        my $hist = $factory->next_History || die print_OUT("No history data returned from esearch");
+        my @uids = $factory->get_ids;
+        $factory->set_parameters(   -eutil => 'esummary',
+                                    -db => 'protein',
+                                    -id => \@uids,
+                                    -email => $EMAIL,
+                                    -history => $hist);
+    #    $factory->reset_parameters(-eutil => 'esummary', -db => 'protein', -id => \@uids,-email => $EMAIL);
+        while (my $ds = $factory->next_DocSum) {
+            my ($taxid) = $ds->get_contents_by_name("TaxId");
+            my ($caption) = $ds->get_contents_by_name("Caption");
+            if (not defined $lineages{ $taxid }){
+                my @sbjct_lineage = $taxNCBI->get_taxonomy( $taxid );
+                my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+                next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+                $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = \@sbjct_lineage;
+                $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lca;
+                $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
+                $lineages{ $taxid }->{'lca_with_qry'} = $lca;
             }
         }
     }
-    # score as 1 the oldest LCA of this gene.
-    if (defined $hard_threshold){
-        next if ($oldest_lca_matrix_pos == -1);
-        $M($gene_counter,$oldest_lca_matrix_pos) .= 1;
-    }
-    $gene_counter++;
-}
-print "\n"; # to finish the counter above
-print_OUT("   '-> Printing query taxan Phylostratum Scores results to [ $out.qry_node_phylostratumscores.txt ]");
-
-## normalise the scores by the sum of their logs, i.e., product of their probabilities.
-unless (defined $hard_threshold) { # do not do it if using hard_threshold because the matrix has a single entry per gene equal to 1.
-    $M /=$M->xchg(0,1)->sumover ; 
-    $M->inplace->setnantobad->inplace->setbadtoval(0);
+    print_OUT("   '-> done with NCBI webservices.")
 }
 
-my $qry_node_PhylostratumScores = $M->sumover;
+############## PROCEED TO FINISH CALCULATIONS ##################
+# Get the oldest stratum for every gene.
+my %qry_ancestors_ranks = ();
+my $c = 0;
+map { $qry_ancestors_ranks{$_} = $c++;   } @ql;
+my %PhyloStratum_scores = ();
+foreach my $qry_seq (keys %S) {
+    my @ranks = sort {$a <=> $b} map { $qry_ancestors_ranks{ $gi_taxData{$_->{'subject_id'}}->{'lca_with_qry'} }; } @{$S{$qry_seq}};
+    my @phyloScores = list zeroes scalar @ql;
+    $phyloScores[$ranks[0]] = 1;
+    $PhyloStratum_scores{$qry_seq} = \@phyloScores;
+}
+print_OUT("Finished calculating hard coded scores");
+print_OUT("Printing summary scores to [ $out.qry_node_phylostratumscores.txt ].");
 
+# Print out the PhyloStratumScores as hardcoded
 open(OUT,">$out.qry_node_phylostratumscores.txt") or die $!;
-print OUT join "\t", map { $qry_ancestors{$_}->{"scientific_name"};} sort { $qry_ancestors{$a}->{'matrix_number'} <=> $qry_ancestors{$b}->{'matrix_number'} }  keys %qry_ancestors;
+print OUT join "\t", @ql;
 print OUT "\n";
-print OUT join "\t", $qry_node_PhylostratumScores->list;
+print OUT join "\t", list sumover mpdl values %PhyloStratum_scores;
 print OUT "\n";
 close(OUT);
 
+print_OUT("Printing gene phylostratum scores to [ $out.txt ].");
 
-print_OUT("   '-> Printing results to [ $out.txt ]");
+# Make table with scores for each gene
+my $phyloScoresTable = join "\t", ("ID",@ql);
+$phyloScoresTable .= "\n";
+
+while (my ($qry_id,$qry_scores) = each %PhyloStratum_scores) {
+    $phyloScoresTable .= join "\t", ($qry_id,@$qry_scores);
+    $phyloScoresTable .= "\n";
+}
 open(OUT,">$out.txt") or die $!;
-# print colnames of output file
-
-print OUT join "\t", map { $qry_ancestors{$_}->{"scientific_name"};} sort { $qry_ancestors{$a}->{'matrix_number'} <=> $qry_ancestors{$b}->{'matrix_number'} }  keys %qry_ancestors;
-print OUT "\n";
-$gene_counter = 0;
-foreach my $qry_gene (keys %S){
-    print OUT $qry_gene,"\t";
-    print OUT join "\t", $M($gene_counter,)->xchg(0,1)->list;
-    print OUT "\n";
-    $gene_counter++;
-}
+print OUT $phyloScoresTable;
 close(OUT);
-
-if (not defined $gi_tax_id_info){
-    print_OUT("   '-> Sequence to taxonomy information has bee stored at [ $out.gi_tax_id.csv ]");
-}
-
 
 print_OUT("Done");
 
-
 exit;
+
+# TODO:
+#3 implement soft-coded
+
 
 __END__
 
@@ -294,7 +284,10 @@ B<This program> will perform a PhyloStratigraphy analysis. It provides a impleme
 
     Analysis options
     -hard, --hard_threshold    Switches to original methodology of Domazet-Loso et. al. (2003)
+    -soft, --soft_threshold    Uses a softhreshols strategy that aims to account for coverage and uncertaintiy of blast results.
     -use_coverage  Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+    -no_ncbi_entrez     Do not use NCBI Entrez API to get information on sequence ids without data on local DBs.
+
  
  
 =head1 OPTIONS
@@ -350,9 +343,17 @@ Print complete documentation
  
  Switches to original methodology of Domazet-Loso et. al. (2003)
 
+=item B<-soft, --soft_threshold>
+ 
+ Uses a softhreshols strategy that aims to account for coverage and uncertaintiy of blast results.
+
 =item B<-use_coverage>
  
  Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+ 
+=item B<-no_ncbi_entrez>
+ 
+ Do not use NCBI Entrez API to get information on sequence ids without data on local DBs.
 
 =back
  
