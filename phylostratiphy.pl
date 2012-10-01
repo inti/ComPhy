@@ -66,7 +66,7 @@ my %S = (); # hash will store to score for each species.
 print_OUT("Starting to parse blast output");
 
 my %gi_taxData = ();
-my %lineages = ();
+my %lineages = (); # each entry has a 'lca_with_qry' and a 'lineage'
 my %target_taxons = ();
 my $seq_counter = 0;
 my %hits_gis = (); # store the gis of the hits
@@ -120,31 +120,22 @@ foreach my $file (@$blast_out){
             my $sbjct_taxid = $taxNCBI->get_taxid( $subject_id[1] );
             if ($sbjct_taxid == 0){
                 push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
-                next;
-                # if tax id not found
-                # try to get it using the accession
-                my ($gi) = get_taxid_from_acc($subject_id[3]);
-                next if ($gi == 0); # next if that fails as well.
-                #$subject_id[1] = $gi;
-                $sbjct_taxid = $taxNCBI->get_taxid( $gi );
+            } else {
+                $gi_taxData{ $subject_id[1] } = { 'lineage' => [], 'tax_id' => $sbjct_taxid, 'lca_with_qry' => ""};
             }
-            $gi_taxData{ $subject_id[1] } = { 'lineage' => [], 'tax_id' => $sbjct_taxid, 'lca_with_qry' => ""};
         }
-        if (not defined $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }){
+        if (not exists $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }){
             my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
             if (scalar @sbjct_lineage == 0){
                 push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
-                next;
-                my $gi = get_taxid_from_acc($subject_id[3]);
-                next if ($gi == 0);
-                $gi_taxData{ $subject_id[1] }->{'tax_id'} = $taxNCBI->get_taxid( $gi );
-                my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
+            } else {
+                my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+                next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+                $gi_taxData{ $subject_id[1] }->{'lineage'} = \@sbjct_lineage;
+                $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lca;
+                $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} = $lca;
+                $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} = \@sbjct_lineage;
             }
-            my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
-            next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
-            $gi_taxData{ $subject_id[1] }->{'lineage'} = \@sbjct_lineage;
-            $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lca;
-            $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} } = $gi_taxData{ $subject_id[1] }->{'tax_id'};
         } else {
             $gi_taxData{ $subject_id[1] }->{'lineage'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} ;
             $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} ;
@@ -155,9 +146,14 @@ foreach my $file (@$blast_out){
         $p_value = pdl 1 - $p_value;
         $p_value = pdl $e_value if ($p_value == 0);
         my $score = -1*($p_value->log) * $coverage;
-        push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[1], 'score' => $score, 'p_value' => $p_value, 'e_value' => $e_value };
+        push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[1],
+                                                        'score' => $score,
+                                                        'p_value' => $p_value,
+                                                        'e_value' => $e_value };
         if ($e_value > 0 and $score > $largest_hit_values{'score'}){
-            %largest_hit_values = ('score' => $score->list, 'e_value' => $e_value->list, 'p_value' => $p_value->list );
+            %largest_hit_values = ( 'score' => $score->list,
+                                    'e_value' => $e_value->list,
+                                    'p_value' => $p_value->list );
         }
         $hits_gis{$subject_id[1]} = '';
     }
@@ -171,12 +167,22 @@ foreach my $hidden (keys %ids_not_found){
     $accs_to_gi{ $accs[-1] } = $subject_id[1];
 }
 if (scalar @accs > 0){
+    print_OUT("There were [ " . scalar @accs . " ] ids unmatched. Using webservices to get taxonomy information on them.");
     my $factory = Bio::DB::EUtilities->new( -eutil => 'esearch',
                                             -email => $EMAIL,
                                             -db    => 'protein',
-                                            -term  => join(',',@accs) );
+                                            -retmax     => 10*(scalar @accs),
+                                            -term  => join(',',@accs),
+                                            -usehistory => 'y');
+    
+    my $hist = $factory->next_History || die print_OUT("No history data returned from esearch");
     my @uids = $factory->get_ids;
-    $factory->reset_parameters(-eutil => 'esummary', -db => 'protein', -id => \@uids);
+    $factory->set_parameters(   -eutil => 'esummary',
+                                -db => 'protein',
+                                -id => \@uids,
+                                -email => $EMAIL,
+                                -history => $hist);
+#    $factory->reset_parameters(-eutil => 'esummary', -db => 'protein', -id => \@uids,-email => $EMAIL);
     while (my $ds = $factory->next_DocSum) {
         my ($taxid) = $ds->get_contents_by_name("TaxId");
         my ($caption) = $ds->get_contents_by_name("Caption");
@@ -191,8 +197,7 @@ if (scalar @accs > 0){
         }
     }
 }
-print Dumper(%ids_not_found);
-getc;
+
 
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
 
@@ -208,10 +213,13 @@ foreach my $qry_seq (keys %S) {
     $PhyloStratum_scores{$qry_seq} = \@phyloScores;
 }
 
-print "ID ",join " ", @ql;
-print "\n";
-print join " ", list sumover mpdl values %PhyloStratum_scores;
-print "\n";
+# Print out the PhyloStratumScores as hardcoded
+open(OUT,">$out.qry_node_phylostratumscores.txt") or die $!;
+print OUT "ID \t",join "\t", @ql;
+print OUT "\n";
+print OUT join "\t", list sumover mpdl values %PhyloStratum_scores;
+print OUT "\n";
+close(OUT);
 exit;
 
 # TODO:
