@@ -1,6 +1,5 @@
 #!/usr/bin/perl -w
 use strict;
-use Bio::DB::Taxonomy;
 use Bio::LITE::Taxonomy;
 use Bio::LITE::Taxonomy::NCBI;
 use Bio::DB::EUtilities;
@@ -48,18 +47,12 @@ defined $seq_db or $seq_db = "nr"; # assuming proteins and that path to dbs is o
 defined $hard_threshold or $hard_threshold = 1e-3;
 defined $soft_threshold and $hard_threshold = undef;
 
-print_OUT("Parsing taxonomy information");
-
-print_OUT("Mapping sequence ids to taxonomy ids");
-
+print_OUT("Reading taxonomy information");
 
 # load tree of life information, both node' connections and names of nodes.
 print_OUT("   '-> Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
-my $db = "";
-my $tree_functions = Bio::Tree::Tree->new(); # load some tree functions
-
 my $taxNCBI = Bio::LITE::Taxonomy::NCBI->new( db=>"NCBI", names=> $namefile, nodes=>$nodesfile, dict=>"$tax_folder/gi_taxid_prot.bin");
 my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
 
@@ -69,13 +62,10 @@ my %S = (); # hash will store to score for each species.
 
 print_OUT("Starting to parse blast output");
 
-my %gi_taxData = ();
+my %gi_taxData = (); # store taxonomy information for each target gi
 my %lineages = (); # each entry has a 'lca_with_qry' and a 'lineage'
-my %target_taxons = ();
 my $seq_counter = 0;
-my %hits_gis = (); # store the gis of the hits
-my %largest_hit_values = ('score' => -1, 'e_value' => 10000, 'p_value' => 1 );
-my %ids_not_found = ();
+my %ids_not_found = (); # store ids of target sequences without taxonomy information on local DBs
 # loop over blast results.
 # for each hit we will store the log(p-value) of the blast hit for each taxon of the tartget sequence.
 foreach my $file (@$blast_out){
@@ -128,21 +118,23 @@ foreach my $file (@$blast_out){
                 $gi_taxData{ $subject_id[1] } = { 'lineage' => [], 'tax_id' => $sbjct_taxid, 'lca_with_qry' => ""};
             }
         }
-        if (not exists $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }){
-            my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
-            if (scalar @sbjct_lineage == 0){
-                push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
-            } else {
-                my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
-                next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
-                $gi_taxData{ $subject_id[1] }->{'lineage'} = \@sbjct_lineage;
-                $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lca;
-                $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} = $lca;
-                $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} = \@sbjct_lineage;
-            }
-        } else {
-            $gi_taxData{ $subject_id[1] }->{'lineage'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} ;
-            $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} ;
+        if (exists $gi_taxData{ $subject_id[1] }){
+                if (not exists $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }){
+                    my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
+                    if (scalar @sbjct_lineage == 0){
+                        push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
+                    } else {
+                        my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+                        next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+                        $gi_taxData{ $subject_id[1] }->{'lineage'} = \@sbjct_lineage;
+                        $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lca;
+                        $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} = $lca;
+                        $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} = \@sbjct_lineage;
+                    }
+                } else {
+                    $gi_taxData{ $subject_id[1] }->{'lineage'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} ;
+                    $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} ;
+                }
         }
         # get the p-value for the hit from the e-value.
         my $e_value = pdl $data[ $fields{'evalue'}];
@@ -154,18 +146,10 @@ foreach my $file (@$blast_out){
                                                         'score' => $score,
                                                         'p_value' => $p_value,
                                                         'e_value' => $e_value };
-        if ($e_value > 0 and $score > $largest_hit_values{'score'}){
-            %largest_hit_values = ( 'score' => $score->list,
-                                    'e_value' => $e_value->list,
-                                    'p_value' => $p_value->list );
-        }
-        $hits_gis{$subject_id[1]} = '';
     }
 }
 
 print_OUT("Finished processing blast output: [ $seq_counter ] sequences of which [ " . scalar (keys %S) . " ] have hits");
-
-
 
 ######## FINE TAXONOMY INFORMATION FOR IDS WITH INCOSISTENT INFORMATION ON LOCAL FILES ################
 # compile all ids for which taxonomy information was not found with local files.
@@ -176,7 +160,7 @@ foreach my $hidden (keys %ids_not_found){
     push @accs, ($subject_id[3] =~ m/(.*)\.\d+$/);
     $accs_to_gi{ $accs[-1] } = $subject_id[1];
 }
-print_OUT("There were [ " . scalar @accs . " ] ids unmatched with local DBs");
+print_OUT("There were [ " . scalar @accs . " ] subject ids from blast search unmatched with local taxonomy DBs");
 if (defined $not_use_ncbi_entrez){
     print_OUT("   '-> Printing this ids to [ $out.ids_without_taxonomy_information.txt ].");
     open(OUT,">$out.ids_without_taxonomy_information.txt") or die $!;
@@ -185,7 +169,6 @@ if (defined $not_use_ncbi_entrez){
 } else {
     print_OUT("   '-> Using NCBI webservices to get taxonomy information on them.");
     if (scalar @accs > 0){
-        print_OUT("There were [ " . scalar @accs . " ] ids unmatched. Using webservices to get taxonomy information on them.");
         my $factory = Bio::DB::EUtilities->new( -eutil => 'esearch',
                                                 -email => $EMAIL,
                                                 -db    => 'protein',
@@ -235,7 +218,7 @@ print_OUT("Printing summary scores to [ $out.qry_node_phylostratumscores.txt ]."
 
 # Print out the PhyloStratumScores as hardcoded
 open(OUT,">$out.qry_node_phylostratumscores.txt") or die $!;
-print OUT "ID \t",join "\t", @ql;
+print OUT join "\t", @ql;
 print OUT "\n";
 print OUT join "\t", list sumover mpdl values %PhyloStratum_scores;
 print OUT "\n";
