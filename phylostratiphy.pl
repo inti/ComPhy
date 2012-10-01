@@ -91,6 +91,9 @@ if (defined $guess_qry_specie){
         # loop over blast results for this query sequence
         my $target_counter = -1; # set to -1 so that first item sets it to 0.
         foreach my $target_seqs (@{$blast_subjects}){
+            if (ref($target_seqs) eq 'ARRAY'){
+                next if (scalar @{$target_seqs} == 0);
+            }
             next if ($target_seqs->{'evalue'} > $hard_threshold);
             my $sbjct_taxid = $taxNCBI->get_taxid( $target_seqs->{'subject_id'} );
             if ($sbjct_taxid == 0){
@@ -116,6 +119,9 @@ while (my ($qry_seq,$blast_subjects) = each %S){
     my $target_counter = -1; # set to -1 so that first item sets it to 0.
     foreach my $target_seqs (@{$blast_subjects}){
         $target_counter++;
+        if (ref($target_seqs) eq 'ARRAY'){
+            next if (scalar @{$target_seqs} == 0); # skip if this query did not have blast hits.
+        }
         ## Filter blast results.
         # if using hard threshold then remove hits by e-value
         if (defined $hard_threshold){
@@ -247,13 +253,18 @@ my $c = 0;
 map { $qry_ancestors_ranks{$_} = $c++;   } @ql;
 my %PhyloStratum_scores = ();
 foreach my $qry_seq (keys %S) {
-    my $oldest_stratum = scalar @ql;
+    my $oldest_stratum = scalar @ql - 1;
     foreach my $target_seq ( @{ $S{ $qry_seq } } ){
         #print Dumper($target_seq);
         #        getc;
+        if (ref($target_seq) eq 'ARRAY'){
+            if (scalar @{$target_seq} == 0){
+                goto(WITHOUT_HITS);
+            }
+        }
         next if ($target_seq->{'pass_hard_thresold'} == 0);
         if (not exists $gi_taxData{ $target_seq->{'subject_id'}}){
-            print_OUT("Something went wrong. I cannot find tax infor for this sequence after having done all the work. [ $target_seq->{'subject'} ]");
+            print_OUT("Something went wrong. I cannot find tax information for this sequence after having done all the work. [ $target_seq->{'subject'} ]");
             next;
         }
         my $lca = $gi_taxData{ $target_seq->{'subject_id'} }->{'lca_with_qry'};
@@ -263,6 +274,7 @@ foreach my $qry_seq (keys %S) {
             $oldest_stratum = $target_seq_stratum ;
         }
     }
+WITHOUT_HITS:
     my @phyloScores = list zeroes scalar @ql;
     $phyloScores[ $oldest_stratum ] = 1;
     $PhyloStratum_scores{$qry_seq} = \@phyloScores;
