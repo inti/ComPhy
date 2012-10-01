@@ -18,7 +18,7 @@ use PhyloStratiphytUtils;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $hard_threshold, $soft_threshold, $gi_tax_id_info,$blastdbcmd,
-        $seq_db, $not_use_ncbi_entrez );
+        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie );
 
 GetOptions(
     'help' => \$help,
@@ -35,31 +35,25 @@ GetOptions(
     'blastdbcmd=s' => \$blastdbcmd,
     'seq_db|db=s' => \$seq_db,
     'no_ncbi_entrez' => \$not_use_ncbi_entrez,
+    'guess_qry_specie' => \$guess_qry_specie,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
 pod2usage(-exitstatus => 2, -verbose => 2) if (defined $man);
 
 
+#### DEFINE SOME DEFAULT VALUES #############
 defined $blastdbcmd or $blastdbcmd = `which blastdbcmd`;
 chomp($blastdbcmd);
 defined $seq_db or $seq_db = "nr"; # assuming proteins and that path to dbs is on a enviromental variable
 defined $hard_threshold or $hard_threshold = 1e-3;
 defined $soft_threshold and $hard_threshold = undef;
 defined $blast_format or $blast_format = 'table';
-print_OUT("Reading taxonomy information");
 
-# load tree of life information, both node' connections and names of nodes.
-print_OUT("   '-> Reading phylogenetic tree and species information");
-my $nodesfile = $tax_folder . "nodes.dmp";
-my $namefile = $tax_folder . "names.dmp";
-my $taxNCBI = Bio::LITE::Taxonomy::NCBI->new( db=>"NCBI", names=> $namefile, nodes=>$nodesfile, dict=>"$tax_folder/gi_taxid_prot.bin");
-my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
-
-### define some variables to start storing the results
 
 print_OUT("Starting to parse blast output");
 
+### define some variables to start storing the results
 my %S = (); # hash will store to score for each species.
 # loop over blast results.
 # for each hit we will store the log(p-value) of the blast hit for each taxon of the tartget sequence.
@@ -69,86 +63,19 @@ foreach my $file (@$blast_out){
         my $parsed_blast_out = parse_blast_table($file);
         @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
     }
-#    open (FILE,$file)or die $!;
-#    my %fields = ();
-#    while (my $line = <FILE>){
-#        # if line has the header of the table. split the header and keep the columns names.
-#        if ($line =~ m/^#/){
-#            if ($line =~ m/^# Fields:/){
-#                # clean up a bit the line
-#                $line =~ s/^# Fields: //;
-#                $line =~ s/\s$//;
-#        $line =~ s/\.//g;
-#        $line =~ s/\%/percent/g;
-#        # split the fields names on the comas.
-#        my @fs = split(/\,\s/,$line);
-#        # store the field names and positions on a hash
-#        for (my $i = 0; $i < scalar @fs; $i++) {
-#            $fs[$i] =~ s/\s+/_/g;
-#            $fields{$fs[$i]} = $i;
-#        }
-#        $seq_counter++;
-#    }
-#    next;
-#}
-#chomp($line);
-#my @data = split(/\t+/,$line);
-## remove the frame of the db hit, we only need to know about the frame of the query seq
-#if (exists $fields{'query/sbjct_frames'}){
-#    $data[ $fields{'query/sbjct_frames'} ] =~ s/\/\w+$//;
-#}
-## extract the indetifiers of the target sequence
-#my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
-## define coverage as the fraction of the target sequence (subject) covered by the query sequence
-#my $coverage = 1;
-#if (defined $use_coverage) {
-#    $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}];
-#}
-## if using hard threshold then remove hits by e-value
-#if (defined $hard_threshold){
-#    next if ($data[ $fields{'evalue'}] > $hard_threshold);
-#}
-## get the taxid and lineage for the sequence.
-#if (not defined $gi_taxData{ $subject_id[1] }){
-#    my $sbjct_taxid = $taxNCBI->get_taxid( $subject_id[1] );
-#    if ($sbjct_taxid == 0){
-#        push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
-#    } else {
-#        $gi_taxData{ $subject_id[1] } = { 'lineage' => [], 'tax_id' => $sbjct_taxid, 'lca_with_qry' => ""};
-#    }
-#}
-#if (exists $gi_taxData{ $subject_id[1] }){
-#    if (not exists $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }){
-#        my @sbjct_lineage = $taxNCBI->get_taxonomy( $gi_taxData{ $subject_id[1] }->{'tax_id'} );
-#        if (scalar @sbjct_lineage == 0){
-#            push @{ $ids_not_found{ $data[ $fields{'subject_id'}] }}, $data[ $fields{'query_id'}];
-#        } else {
-#            my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
-#            next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
-#            $gi_taxData{ $subject_id[1] }->{'lineage'} = \@sbjct_lineage;
-#            $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lca;
-#            $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} = $lca;
-#            $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} = \@sbjct_lineage;
-#        }
-#    } else {
-#        $gi_taxData{ $subject_id[1] }->{'lineage'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lineage'} ;
-#        $gi_taxData{ $subject_id[1] }->{'lca_with_qry'} = $lineages{ $gi_taxData{ $subject_id[1] }->{'tax_id'} }->{'lca_with_qry'} ;
-#    }
-#}
-## get the p-value for the hit from the e-value.
-#my $e_value = pdl $data[ $fields{'evalue'}];
-#my $p_value = pdl E_CONSTANT**(-$e_value);
-#$p_value = pdl 1 - $p_value;
-#$p_value = pdl $e_value if ($p_value == 0);
-#my $score = -1*($p_value->log) * $coverage;
-#push @{ $S{ $data[ $fields{'query_id'}] }  }, { 'subject_id' => $subject_id[1],
-#    'score' => $score,
-#    'p_value' => $p_value,
-#    'e_value' => $e_value };
-#}
 }
-
 print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] sequences.");
+
+#### LOAD TAXONOMY DB
+print_OUT("Reading taxonomy information");
+
+# load tree of life information, both node' connections and names of nodes.
+print_OUT("   '-> Reading phylogenetic tree and species information");
+my $nodesfile = $tax_folder . "nodes.dmp";
+my $namefile = $tax_folder . "names.dmp";
+my $taxNCBI = Bio::LITE::Taxonomy::NCBI->new( db=>"NCBI", names=> $namefile, nodes=>$nodesfile, dict=>"$tax_folder/gi_taxid_prot.bin");
+my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
+
 
 ######## FILTER BLAST HITS AND GET TAXONMY INFORMATION FOR TARGET SEQUENCES AND SPECIES.
 my %gi_taxData = (); # store taxonomy information for each target gi
@@ -156,6 +83,9 @@ my %lineages = (); # each entry has a 'lca_with_qry' and a 'lineage'
 my $seq_counter = 0;
 my %ids_not_found = (); # store ids of target sequences without taxonomy information on local DBs
 
+my %specie_guess = ();
+
+# First pass over the data to get the taxonomy id of each target sequence
 while (my ($qry_seq,$blast_subjects) = each %S){
     # loop over blast results for this query sequence
     my $target_counter = -1; # set to -1 so that first item sets it to 0.
