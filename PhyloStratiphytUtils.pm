@@ -67,10 +67,11 @@ sub parse_blast_table {
             $data[ $fields{'query/sbjct_frames'} ] =~ s/\/\w+$//;
             $frame = $data[ $fields{'query/sbjct_frames'} ];
         }
+
         # extract the indetifiers of the target sequence
         my @subject_id = split(/\|/,$data[ $fields{'subject_id'}]);
         # define coverage as the fraction of the target sequence (subject) covered by the query sequence
-        my $coverage = ($data[ $fields{'s_end'}] - $data[ $fields{'s_start'}])/$data[ $fields{'query_length'}];
+        my $coverage = $data[ $fields{'alignment_length'}]/$data[ $fields{'query_length'}];
         # get the p-value for the hit from the e-value.
         my $e_value = pdl $data[ $fields{'evalue'}];
         my $p_value = pdl E_CONSTANT**(-$e_value);
@@ -84,6 +85,7 @@ sub parse_blast_table {
                                                             'evalue' => $e_value,
                                                             'coverage' => $coverage,
                                                             'frames' => $frame,
+                                                            'percent_identity' => $data[ $fields{'percent_identity'}],
                                                           };
 
     }

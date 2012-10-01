@@ -74,7 +74,6 @@ print_OUT("   '-> Reading phylogenetic tree and species information");
 my $nodesfile = $tax_folder . "nodes.dmp";
 my $namefile = $tax_folder . "names.dmp";
 my $taxNCBI = Bio::LITE::Taxonomy::NCBI->new( db=>"NCBI", names=> $namefile, nodes=>$nodesfile, dict=>"$tax_folder/gi_taxid_prot.bin");
-my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
 
 
 ######## FILTER BLAST HITS AND GET TAXONMY INFORMATION FOR TARGET SEQUENCES AND SPECIES.
@@ -83,7 +82,33 @@ my %lineages = (); # each entry has a 'lca_with_qry' and a 'lineage'
 my $seq_counter = 0;
 my %ids_not_found = (); # store ids of target sequences without taxonomy information on local DBs
 
+#### if requested guess the query specie identity
 my %specie_guess = ();
+if (defined $guess_qry_specie){
+    print_OUT("Query specie id not provided. Guessing query specie based on blast results.");
+    while (my ($qry_seq,$blast_subjects) = each %S){
+        next if (scalar @{$blast_subjects} == 0);
+        # loop over blast results for this query sequence
+        my $target_counter = -1; # set to -1 so that first item sets it to 0.
+        foreach my $target_seqs (@{$blast_subjects}){
+            next if ($target_seqs->{'evalue'} > $hard_threshold);
+            my $sbjct_taxid = $taxNCBI->get_taxid( $target_seqs->{'subject_id'} );
+            if ($sbjct_taxid == 0){
+                push @{ $ids_not_found{ $target_seqs->{'subject'} }}, $qry_seq;
+            } else {
+                $specie_guess{$sbjct_taxid}++ if ( $target_seqs->{'percent_identity'} == 100);
+                $gi_taxData{ $target_seqs->{'subject_id'} } = { 'lineage' => [],
+                                                                'tax_id' => $sbjct_taxid,
+                                                                'lca_with_qry' => ''};
+            }
+        }
+    }
+    ($user_provided_query_taxon_id) = sort {$specie_guess{$b} <=> $specie_guess{$a} } keys %specie_guess;
+    print_OUT("   '-> I am gessing that query specie NCBI Taxonomy id is [ $user_provided_query_taxon_id ].");
+}
+
+#### Obtain lineage of query specie.
+my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
 
 # First pass over the data to get the taxonomy id of each target sequence
 while (my ($qry_seq,$blast_subjects) = each %S){
@@ -134,6 +159,28 @@ while (my ($qry_seq,$blast_subjects) = each %S){
                     $gi_taxData{ $target_seqs->{'subject_id'} }->{'lca_with_qry'} = $lineages{ $sbjct_taxid }->{'lca_with_qry'} ;
                 }
             }
+        } else {
+            my $sbjct_taxid = $gi_taxData{ $target_seqs->{'subject_id'} }->{'tax_id'};
+            if (not exists $lineages{ $sbjct_taxid }){
+                my @sbjct_lineage = $taxNCBI->get_taxonomy( $sbjct_taxid );
+                if (scalar @sbjct_lineage == 0){
+                    push @{ $ids_not_found{ $target_seqs->{'subject'} }}, $qry_seq;
+                } else {
+                    my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql);
+                    if ($lca eq "diff_root") {# exclude those that have a different root to cell organisms.
+                        $gi_taxData{ $target_seqs->{'subject_id'} }->{'lineage'} = \@sbjct_lineage;
+                        $gi_taxData{ $target_seqs->{'subject_id'} }->{'lca_with_qry'} = $lca;
+                        next;
+                    }
+                    $gi_taxData{ $target_seqs->{'subject_id'} }->{'lineage'} = \@sbjct_lineage;
+                    $gi_taxData{ $target_seqs->{'subject_id'} }->{'lca_with_qry'} = $lca;
+                    $lineages{ $sbjct_taxid }->{'lca_with_qry'} = $lca;
+                    $lineages{ $sbjct_taxid }->{'lineage'} = \@sbjct_lineage;
+                }
+            } else {
+                $gi_taxData{ $target_seqs->{'subject_id'} }->{'lineage'} = $lineages{ $sbjct_taxid }->{'lineage'} ;
+                $gi_taxData{ $target_seqs->{'subject_id'} }->{'lca_with_qry'} = $lineages{ $sbjct_taxid }->{'lca_with_qry'} ;
+            }        
         }
     }
 
