@@ -18,7 +18,7 @@ use PhyloStratiphytUtils;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $hard_threshold, $soft_threshold, $gi_tax_id_info,$blastdbcmd,
-        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie );
+        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size );
 
 GetOptions(
     'help' => \$help,
@@ -35,6 +35,7 @@ GetOptions(
     'blastdbcmd=s' => \$blastdbcmd,
     'seq_db|db=s' => \$seq_db,
     'no_ncbi_entrez' => \$not_use_ncbi_entrez,
+    'ncbi_entrez_batch_size=i' => \$ncbi_entrez_batch_size,
     'guess_qry_specie' => \$guess_qry_specie,
 ) or pod2usage(0);
 
@@ -49,7 +50,7 @@ defined $seq_db or $seq_db = "nr"; # assuming proteins and that path to dbs is o
 defined $hard_threshold or $hard_threshold = 1e-3;
 defined $soft_threshold and $hard_threshold = undef;
 defined $blast_format or $blast_format = 'table';
-
+defined $ncbi_entrez_batch_size or $ncbi_entrez_batch_size = 500;
 
 print_OUT("Starting to parse blast output");
 
@@ -209,41 +210,48 @@ if (defined $not_use_ncbi_entrez){
     print OUT join "\n", @accs;
     close(OUT);
 } else {
-    print_OUT("   '-> Using NCBI webservices to get taxonomy information on them.");
     if (scalar @accs > 0){
-        my $factory = Bio::DB::EUtilities->new( -eutil => 'esearch',
-                                                -email => $EMAIL,
-                                                -db    => 'protein',
-                                                -retmax     => 10*(scalar @accs),
-                                                -term  => join(',',@accs),
-                                                -usehistory => 'y');
-        
-        my $hist = $factory->next_History || die print_OUT("No history data returned from esearch");
-        my @uids = $factory->get_ids;
-        $factory->set_parameters(   -eutil => 'esummary',
-                                    -db => 'protein',
-                                    -id => \@uids,
-                                    -email => $EMAIL,
-                                    -history => $hist);
-    #    $factory->reset_parameters(-eutil => 'esummary', -db => 'protein', -id => \@uids,-email => $EMAIL);
-        while (my $ds = $factory->next_DocSum) {
-            my ($taxid) = $ds->get_contents_by_name("TaxId");
-            my ($caption) = $ds->get_contents_by_name("Caption");
-            if (not defined $lineages{ $taxid }){
-                my @sbjct_lineage = $taxNCBI->get_taxonomy( $taxid );
-                my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
-                next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
-                $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = \@sbjct_lineage;
-                $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lca;
-                $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
-                $lineages{ $taxid }->{'lca_with_qry'} = $lca;
-            } else {
-                $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = $lineages{ $taxid }->{'lineage'};
-                $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
+        print_OUT("   '-> Using NCBI webservices to get taxonomy information on them.");
+        print_OUT("   '-> It will use approximately [ " . round_up((scalar @accs)/$ncbi_entrez_batch_size) . " ] queries.");
+        while (scalar @accs > 0){
+            if (scalar @accs < $ncbi_entrez_batch_size){
+                $ncbi_entrez_batch_size = scalar @accs;
+            }
+            my @processing_accs = splice(@accs,0,$ncbi_entrez_batch_size);
+            my $factory = Bio::DB::EUtilities->new( -eutil => 'esearch',
+                                                    -email => $EMAIL,
+                                                    -db    => 'protein',
+                                                    -retmax     => 10*(scalar @processing_accs),
+                                                    -term  => join(',',@processing_accs),
+                                                    -usehistory => 'y');
+            
+            my $hist = $factory->next_History || die print_OUT("No history data returned from esearch");
+            my @uids = $factory->get_ids;
+            $factory->set_parameters(   -eutil => 'esummary',
+                                        -db => 'protein',
+                                        -id => \@uids,
+                                        -email => $EMAIL,
+                                        -history => $hist);
+        #    $factory->reset_parameters(-eutil => 'esummary', -db => 'protein', -id => \@uids,-email => $EMAIL);
+            while (my $ds = $factory->next_DocSum) {
+                my ($taxid) = $ds->get_contents_by_name("TaxId");
+                my ($caption) = $ds->get_contents_by_name("Caption");
+                if (not defined $lineages{ $taxid }){
+                    my @sbjct_lineage = $taxNCBI->get_taxonomy( $taxid );
+                    my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+                    next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+                    $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = \@sbjct_lineage;
+                    $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lca;
+                    $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
+                    $lineages{ $taxid }->{'lca_with_qry'} = $lca;
+                } else {
+                    $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = $lineages{ $taxid }->{'lineage'};
+                    $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
+                }
             }
         }
+        print_OUT("   '-> done with NCBI webservices.")
     }
-    print_OUT("   '-> done with NCBI webservices.")
 }
 
 ############## PROCEED TO FINISH CALCULATIONS ##################
@@ -354,6 +362,9 @@ B<This program> will perform a PhyloStratigraphy analysis. It provides a impleme
     -soft, --soft_threshold    Uses a softhreshols strategy that aims to account for coverage and uncertaintiy of blast results.
     -use_coverage  Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
     -no_ncbi_entrez     Do not use NCBI Entrez API to get information on sequence ids without data on local DBs.
+    -ncbi_entrez_batch_size Number of IDs to submit to the NCBI API at time. DO NOT SET IT TO MORE THAN 500 (defualt 500).
+    -guess_qry_specie   use blast result to guess query species.
+
 
  
  
@@ -421,6 +432,14 @@ Print complete documentation
 =item B<-no_ncbi_entrez>
  
  Do not use NCBI Entrez API to get information on sequence ids without data on local DBs.
+
+=item B<-ncbi_entrez_batch_size> 
+ 
+ Number of IDs to submit to the NCBI API at time. DO NOT SET IT TO MORE THAN 500 (defualt 500).
+
+=item B<-guess_qry_specie>
+ 
+ Use blast result to guess query species. This done by selecting the most common specie with 100% identify blast hits. This (may) will only work if the specie of interest is actually on the DB use for the blast searches.
 
 =back
  

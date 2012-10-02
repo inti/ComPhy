@@ -20,8 +20,15 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw( parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw( parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw(round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
+@EXPORT_OK = qw(round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+
+sub round_up {
+    my $number = shift;
+    my $back = int(10*((($number)/10) + 0.05));
+    $back  = 1 if ($back == 0);
+    return($back);
+}
 
 sub parse_blast_table {
     my $file = shift;
