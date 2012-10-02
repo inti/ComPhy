@@ -63,6 +63,9 @@ foreach my $file (@$blast_out){
     if ($blast_format eq 'table'){
         my $parsed_blast_out = parse_blast_table($file);
         @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
+    } elsif ($blast_format eq 'paralign'){
+        my $parsed_blast_out = parse_paralign_table($file);
+        @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
     }
 }
 print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] sequences.");
@@ -108,6 +111,10 @@ if (defined $guess_qry_specie){
         }
     }
     ($user_provided_query_taxon_id) = sort {$specie_guess{$b} <=> $specie_guess{$a} } keys %specie_guess;
+    if (not defined $user_provided_query_taxon_id){
+        print_OUT("I could not guess the query specie.");
+        exit;
+    }
     print_OUT("   '-> I am gessing that query specie NCBI Taxonomy id is [ $user_provided_query_taxon_id ].");
 }
 
@@ -238,6 +245,10 @@ if (defined $not_use_ncbi_entrez){
                 my ($caption) = $ds->get_contents_by_name("Caption");
                 if (not defined $lineages{ $taxid }){
                     my @sbjct_lineage = $taxNCBI->get_taxonomy( $taxid );
+                    if (scalar @sbjct_lineage == 0){
+                        print_OUT("I cannot find taxid and lineage for [ $caption ]");
+                        next;
+                    }
                     my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
                     next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
                     $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = \@sbjct_lineage;

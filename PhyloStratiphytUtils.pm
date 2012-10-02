@@ -20,14 +20,85 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw(round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw(round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw(parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
+@EXPORT_OK = qw(parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
 
 sub round_up {
     my $number = shift;
     my $back = int(10*((($number)/10) + 0.05));
     $back  = 1 if ($back == 0);
     return($back);
+}
+
+sub parse_paralign_table {
+    ### This is the information contained on the table
+    # query sequence description header
+    # database sequence description header
+    # database sequence length
+    # strand (+ or -) for the query sequence [only included if the “-n” option is in effect ]
+    # strand (+ or -) and frame for the query sequence [only included if the “-x” option is in effect ]
+    # strand (+ or -) and frame for the database sequence [only included if the “-t” option is in effect ]
+    # alignment score
+    # expect value
+    ####  Information given only for aligned hits:
+    # length of alignment
+    # number of identical symbols in alignment
+    # number of similar symbols in alignment (corresponding to a positive value in the score matrix) [not included if the “-n” option is in effect]
+    # number of gaps
+    # number of indels
+    # alignment starting position in query sequence (1-based)
+    # alignment ending position in query sequence (1-based)
+    # alignment starting position in database sequence (1-based)
+    # alignment ending position in database sequence (1-based)
+    my $file = shift;
+    my %back = ();
+    open (FILE,$file) or die $!;
+    my %fields = (
+                    'query_id'              => 0,
+                    'subject_id'            => 1,
+                    'subject_desc'          => 2,
+                    'subject_length'        => 3,
+                    'score'                 => 4,
+                    'evalue'                => 5,
+                    'alignment_length'      => 6,
+                    'n_identical_symbols'   => 7,
+                    'n_similar_symbols'     => 8,
+                    'n_gaps'                => 9,
+                    'n_indels'              => 10,
+                    'query_start'           => 11,
+                    'query_end'             => 12,
+                    'subject_start'         => 13,
+                    'subject_end'           => 14,
+                    );
+    my $qry_id = "";
+    while (my $line = <FILE>){
+        chomp($line);
+        my @data = split(/\t+/,$line);
+        my $c = 0;
+        my @subject_1 = split(/\|/,$data[ $fields{'subject_id'}]);
+        my @subject_2 = split(/\|/,$data[ $fields{'subject_desc'}]);
+        my @subject_id = (@subject_1,$subject_2[0],$subject_2[1]);
+        my $seq_id = join "|", @subject_id;
+        my $e_value = pdl $data[ $fields{'evalue'}];
+        my $p_value = pdl E_CONSTANT**(-$e_value);
+        $p_value = pdl 1 - $p_value;
+        $p_value = pdl $e_value if ($p_value == 0);
+        #### BOTH COVERAGE AND %IDENTITY ARE NOT WELL CALCULATED HERE. THIS NEEDS TO BE REVIEWED.
+        my $coverage = $data[ $fields{'alignment_length'}]/$data[ $fields{'subject_length'}];
+        my $percent_identity = 100*$data[ $fields{'n_identical_symbols'}]/$data[ $fields{'alignment_length'}];
+        $data[ $fields{'query_id'}] =~ s/ /_/g;
+        my $frame = 0;
+        push @{ $back{ $data[ $fields{'query_id'}] }  }, {  'subject_id' => $subject_id[1],
+            'subject' => $seq_id,
+            'score' => $data[ $fields{'score'}],
+            'pvalue' => $p_value,
+            'evalue' => $e_value,
+            'coverage' => $coverage,
+            'frames' => $frame,
+            'percent_identity' => $percent_identity,
+        };
+    }
+    return(\%back);
 }
 
 sub parse_blast_table {
@@ -84,10 +155,9 @@ sub parse_blast_table {
         my $p_value = pdl E_CONSTANT**(-$e_value);
         $p_value = pdl 1 - $p_value;
         $p_value = pdl $e_value if ($p_value == 0);
-        my $score = -1*($p_value->log) * $coverage;
         push @{ $back{ $data[ $fields{'query_id'}] }  }, {  'subject_id' => $subject_id[1],
                                                             'subject' => $data[ $fields{'subject_id'}],
-                                                            'score' => $score,
+                                                            'score' => $data[ $fields{'bit_score'}],
                                                             'pvalue' => $p_value,
                                                             'evalue' => $e_value,
                                                             'coverage' => $coverage,
