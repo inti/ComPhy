@@ -1,8 +1,10 @@
 #!/usr/bin/perl -w
 use strict;
+use LWP::Simple;
+use LWP::UserAgent;
+use Bio::SeqIO;
 use Bio::LITE::Taxonomy;
 use Bio::LITE::Taxonomy::NCBI;
-use Bio::DB::EUtilities;
 use Getopt::Long;
 use Pod::Usage;
 use PDL;
@@ -220,44 +222,55 @@ if (defined $not_use_ncbi_entrez){
     if (scalar @accs > 0){
         print_OUT("   '-> Using NCBI webservices to get taxonomy information on them.");
         print_OUT("   '-> It will use approximately [ " . round_up((scalar @accs)/$ncbi_entrez_batch_size) . " ] queries.");
-        while (scalar @accs > 0){
-            if (scalar @accs < $ncbi_entrez_batch_size){
-                $ncbi_entrez_batch_size = scalar @accs;
-            }
-            my @processing_accs = splice(@accs,0,$ncbi_entrez_batch_size);
-            my $factory = Bio::DB::EUtilities->new( -eutil => 'esearch',
-                                                    -email => $EMAIL,
-                                                    -db    => 'protein',
-                                                    -retmax     => 10*(scalar @processing_accs),
-                                                    -term  => join(',',@processing_accs),
-                                                    -usehistory => 'y');
-            
-            my $hist = $factory->next_History || die print_OUT("No history data returned from esearch");
-            my @uids = $factory->get_ids;
-            $factory->set_parameters(   -eutil => 'esummary',
-                                        -db => 'protein',
-                                        -id => \@uids,
-                                        -email => $EMAIL,
-                                        -history => $hist);
-        #    $factory->reset_parameters(-eutil => 'esummary', -db => 'protein', -id => \@uids,-email => $EMAIL);
-            while (my $ds = $factory->next_DocSum) {
-                my ($taxid) = $ds->get_contents_by_name("TaxId");
-                my ($caption) = $ds->get_contents_by_name("Caption");
-                if (not defined $lineages{ $taxid }){
-                    my @sbjct_lineage = $taxNCBI->get_taxonomy( $taxid );
-                    if (scalar @sbjct_lineage == 0){
-                        print_OUT("I cannot find taxid and lineage for [ $caption ]");
-                        next;
+        # Download protein records corresponding to a list of GI numbers.
+        print_OUT("   '-> Uploading accession ids to NCBI");
+        #assemble the epost URL
+        my $db = 'protein';
+        my $id_list = join ",", @accs;
+        my $base = 'http://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
+        my $url = $base . "esearch.fcgi?db=$db&term=$id_list&usehistory=y";
+        #my $url = $base . "epost.fcgi?db=$db&id=$id_list";
+        #post the epost URL
+        my $output = get($url);
+        print_OUT("   '->  ... done ...");
+        #parse WebEnv and QueryKey
+        my $web = $1 if ($output =~ /<WebEnv>(\S+)<\/WebEnv>/);
+        my $key = $1 if ($output =~ /<QueryKey>(\d+)<\/QueryKey>/);
+        my $count = $1 if ($output =~ /<Count>(\d+)<\/Count>/);
+        defined $count or $count  = scalar @accs;
+        print_OUT("   '-> Dowanloading sequence information for [ $count ] ids.");
+        #retrieve data in batches of 500
+        my $retmax = $ncbi_entrez_batch_size;
+        for (my $retstart = 0; $retstart < $count; $retstart += $retmax) {
+            my $efetch_url =  $base . "efetch.fcgi?db=$db&query_key=$key&WebEnv=$web&rettype=gb";
+            $efetch_url .= "&query_key=$key&retstart=$retstart";
+            $efetch_url .= "&retmax=$retmax";
+            my $efetch_out = get($efetch_url);
+            ## get a string into $string somehow, with its format in $format, say from a web form.
+            open(my ($stringfh), "<", \$efetch_out) or print_OUT("Could not open string for reading: $!") and die;
+            my $seqio = Bio::SeqIO-> new( -fh => $stringfh, -format => 'genbank' );
+            while( my $seq = $seqio->next_seq ) {
+                my %features = ();
+                for my $feat_object ($seq->get_SeqFeatures) {          
+                    if ($feat_object->has_tag("db_xref")){
+                        my ($id) = $feat_object->get_tag_values("db_xref");
+                        my ($type,$value) = split(/:/,$id);
+                        $features{$type} = $value;
                     }
+                }
+                my $taxid  = $features{'taxon'};
+                my $acc  = $seq->id;
+                if (not defined $lineages{ $taxid }){
+                    my @sbjct_lineage = reverse $seq->species->classification;
                     my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
                     next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
-                    $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = \@sbjct_lineage;
-                    $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lca;
+                    $gi_taxData{ $accs_to_gi{ $acc } }->{'lineage'} = \@sbjct_lineage;
+                    $gi_taxData{ $accs_to_gi{ $acc } }->{'lca_with_qry'} = $lca;
                     $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
                     $lineages{ $taxid }->{'lca_with_qry'} = $lca;
                 } else {
-                    $gi_taxData{ $accs_to_gi{ $caption } }->{'lineage'} = $lineages{ $taxid }->{'lineage'};
-                    $gi_taxData{ $accs_to_gi{ $caption } }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
+                    $gi_taxData{ $accs_to_gi{ $acc } }->{'lineage'} = $lineages{ $taxid }->{'lineage'};
+                    $gi_taxData{ $accs_to_gi{ $acc } }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
                 }
             }
         }
