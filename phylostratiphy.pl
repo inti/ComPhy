@@ -11,7 +11,6 @@ use PDL::NiceSlice;
 use Data::Dumper;
 
 use constant E_CONSTANT => log(10);
-my $EMAIL = 'intipedroso@gmail.com';
 
 # local modules
 use PhyloStratiphytUtils;
@@ -19,7 +18,7 @@ use NCBI_PowerScripting;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $hard_threshold, $soft_threshold, $gi_tax_id_info,$blastdbcmd,
-        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries );
+        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL );
 
 GetOptions(
     'help' => \$help,
@@ -39,10 +38,12 @@ GetOptions(
     'ncbi_entrez_batch_size=i' => \$ncbi_entrez_batch_size,
     'guess_qry_specie' => \$guess_qry_specie,
     'max_eutils_queries' => \$max_eutils_queries,
+    'email' => \$EMAIL,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
 pod2usage(-exitstatus => 2, -verbose => 2) if (defined $man);
+pod2usage(-exitstatus => 2, -verbose => 2) if (not defined $EMAIL);
 
 
 #### DEFINE SOME DEFAULT VALUES #############
