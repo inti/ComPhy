@@ -14,13 +14,14 @@ use Data::Dumper;
 
 use constant E_CONSTANT => log(10);
 my $EMAIL = 'intipedroso@gmail.com';
-# local modules
 
+# local modules
 use PhyloStratiphytUtils;
+use NCBI_PowerScripting;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $hard_threshold, $soft_threshold, $gi_tax_id_info,$blastdbcmd,
-        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size );
+        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries );
 
 GetOptions(
     'help' => \$help,
@@ -39,6 +40,7 @@ GetOptions(
     'no_ncbi_entrez' => \$not_use_ncbi_entrez,
     'ncbi_entrez_batch_size=i' => \$ncbi_entrez_batch_size,
     'guess_qry_specie' => \$guess_qry_specie,
+    'max_eutils_queries' => \$max_eutils_queries,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -53,6 +55,9 @@ defined $hard_threshold or $hard_threshold = 1e-3;
 defined $soft_threshold and $hard_threshold = undef;
 defined $blast_format or $blast_format = 'table';
 defined $ncbi_entrez_batch_size or $ncbi_entrez_batch_size = 500;
+$ncbi_entrez_batch_size = 500 if ($ncbi_entrez_batch_size > 500);
+defined $max_eutils_queries or $max_eutils_queries = 0;
+
 
 print_OUT("Starting to parse blast output");
 
@@ -115,6 +120,7 @@ if (defined $guess_qry_specie){
     ($user_provided_query_taxon_id) = sort {$specie_guess{$b} <=> $specie_guess{$a} } keys %specie_guess;
     if (not defined $user_provided_query_taxon_id){
         print_OUT("I could not guess the query specie.");
+        print_OUT("Bye :(.");
         exit;
     }
     print_OUT("   '-> I am gessing that query specie NCBI Taxonomy id is [ $user_provided_query_taxon_id ].");
@@ -205,12 +211,15 @@ while (my ($qry_seq,$blast_subjects) = each %S){
 
 ######## FIND TAXONOMY INFORMATION FOR IDS WITH INCOSISTENT INFORMATION ON LOCAL FILES ################
 # compile all ids for which taxonomy information was not found with local files.
+my $try_again_eutils = 1;
+my $last_unmatched = 0;
+TRYAGAIN:
 my @accs = ();
 my %accs_to_gi = ();
 foreach my $hidden (keys %ids_not_found){
     my @subject_id = split( /\|/,$hidden );
     push @accs, ($subject_id[3] =~ m/(.*)\.\d+$/);
-    $accs_to_gi{ $accs[-1] } = $subject_id[1];
+    $accs_to_gi{ $accs[-1] } = { 'gi' => $subject_id[1], 'full_id' => $hidden};
 }
 print_OUT("There were [ " . scalar @accs . " ] subject ids from blast search unmatched with local taxonomy DBs");
 if (defined $not_use_ncbi_entrez){
@@ -220,58 +229,83 @@ if (defined $not_use_ncbi_entrez){
     close(OUT);
 } else {
     if (scalar @accs > 0){
-        print_OUT("   '-> Using NCBI webservices to get taxonomy information on them.");
-        print_OUT("   '-> It will use approximately [ " . round_up((scalar @accs)/$ncbi_entrez_batch_size) . " ] queries.");
-        # Download protein records corresponding to a list of GI numbers.
-        print_OUT("   '-> Uploading accession ids to NCBI");
-        #assemble the epost URL
-        my $db = 'protein';
-        my $id_list = join ",", @accs;
-        my $base = 'http://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
-        my $url = $base . "esearch.fcgi?db=$db&term=$id_list&usehistory=y";
-        #my $url = $base . "epost.fcgi?db=$db&id=$id_list";
-        #post the epost URL
-        my $output = get($url);
-        print_OUT("   '->  ... done ...");
-        #parse WebEnv and QueryKey
-        my $web = $1 if ($output =~ /<WebEnv>(\S+)<\/WebEnv>/);
-        my $key = $1 if ($output =~ /<QueryKey>(\d+)<\/QueryKey>/);
-        my $count = $1 if ($output =~ /<Count>(\d+)<\/Count>/);
-        defined $count or $count  = scalar @accs;
-        print_OUT("   '-> Dowanloading sequence information for [ $count ] ids.");
-        #retrieve data in batches of 500
-        my $retmax = $ncbi_entrez_batch_size;
-        for (my $retstart = 0; $retstart < $count; $retstart += $retmax) {
-            my $efetch_url =  $base . "efetch.fcgi?db=$db&query_key=$key&WebEnv=$web&rettype=gb";
-            $efetch_url .= "&query_key=$key&retstart=$retstart";
-            $efetch_url .= "&retmax=$retmax";
-            my $efetch_out = get($efetch_url);
-            ## get a string into $string somehow, with its format in $format, say from a web form.
-            open(my ($stringfh), "<", \$efetch_out) or print_OUT("Could not open string for reading: $!") and die;
-            my $seqio = Bio::SeqIO-> new( -fh => $stringfh, -format => 'genbank' );
-            while( my $seq = $seqio->next_seq ) {
-                my %features = ();
-                for my $feat_object ($seq->get_SeqFeatures) {          
-                    if ($feat_object->has_tag("db_xref")){
-                        my ($id) = $feat_object->get_tag_values("db_xref");
-                        my ($type,$value) = split(/:/,$id);
-                        $features{$type} = $value;
-                    }
+        print_OUT("   '-> Using NCBI webservices to get taxonomy information on them. Trial [ $try_again_eutils ]");
+        print_OUT("   '-> It will use approximately [ " . round_up(0.5*(scalar @accs)/$ncbi_entrez_batch_size) . " ] queries.");
+        my $id_list = join ",",@accs;
+        my %params = (
+                        'db' => 'protein',
+                        'term' => $id_list,
+                        'email' => $EMAIL,
+                        'tool' => $0,
+                        'usehistory' => 'y',
+                        );
+        # search on data for accessions
+        %params = esearch(%params);
+        print_OUT("Identified entried for [ " . $params{count} . " ] ids.");
+        # define parameters needed for efetch
+        $params{num} = $params{count};
+        $params{outfile} = "$0.$$.tmp.sequence.file.txt";
+        $params{retmode} = 'text';
+        $params{rettype} = 'gb';
+        $params{batch} = $ncbi_entrez_batch_size;
+        
+        # get the sequence files.
+        efetch_batch(%params);
+        my %matched_ids = ();
+        my $seqio = Bio::SeqIO->new( -file => $params{outfile}, -format => 'genbank' );
+        while( my $seq = $seqio->next_seq ) {
+            #print $seq->id,' ',$seq->species->node_name,' ',join " ",$seq->species->classification,"\n";
+            my %features = ();
+            for my $feat_object ($seq->get_SeqFeatures) {
+                if ($feat_object->has_tag("db_xref")){
+                    my ($id) = $feat_object->get_tag_values("db_xref");
+                    my ($type,$value) = split(/:/,$id);
+                    $features{$type} = $value;
                 }
-                my $taxid  = $features{'taxon'};
-                my $acc  = $seq->id;
-                if (not defined $lineages{ $taxid }){
-                    my @sbjct_lineage = reverse $seq->species->classification;
-                    my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
-                    next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
-                    $gi_taxData{ $accs_to_gi{ $acc } }->{'lineage'} = \@sbjct_lineage;
-                    $gi_taxData{ $accs_to_gi{ $acc } }->{'lca_with_qry'} = $lca;
-                    $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
-                    $lineages{ $taxid }->{'lca_with_qry'} = $lca;
+            }
+            next if (not defined $features{'taxon'});
+            my $taxid  = $features{'taxon'};
+            my $acc  = $seq->accession();
+            if (not defined $lineages{ $taxid }){
+                my @sbjct_lineage = reverse $seq->species->classification;
+                my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+                next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+                $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lineage'} = \@sbjct_lineage;
+                $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lca_with_qry'} = $lca;
+                $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
+                $lineages{ $taxid }->{'lca_with_qry'} = $lca;
+            } else {
+                $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lineage'} = $lineages{ $taxid }->{'lineage'};
+                $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
+            }
+            # remove it from the list of ids not solved
+            if (not exists $ids_not_found{$accs_to_gi{ $acc }->{'full_id'} }){
+                print "$acc ==> $accs_to_gi{ $acc }->{'full_id'}\n";
+            }
+            delete( $ids_not_found{$accs_to_gi{ $acc }->{'full_id'} }  );
+        }
+        unlink($params{outfile});
+
+        if (scalar (keys %ids_not_found) > 0){
+            if ($try_again_eutils < $max_eutils_queries) {
+                $try_again_eutils++;
+                goto(TRYAGAIN) if ($last_unmatched == 0);
+                if (scalar (keys %ids_not_found) < $last_unmatched){
+                    $last_unmatched = scalar (keys %ids_not_found);
+                    goto(TRYAGAIN);
                 } else {
-                    $gi_taxData{ $accs_to_gi{ $acc } }->{'lineage'} = $lineages{ $taxid }->{'lineage'};
-                    $gi_taxData{ $accs_to_gi{ $acc } }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
+                    goto(PRINTUNMATCHED);
                 }
+            } else {
+PRINTUNMATCHED:
+                print_OUT("      ... there are still [ " . scalar (keys %ids_not_found) . " ] without match on DB. They will be printed to [ $out.unmatched_ids.txt ]");
+                open (BADIDS,">$out.unmatched_ids.txt") or die $!;
+                print BADIDS "UNMATCHED_IDS\tQUERY_IDS\n";
+                while (my ($id,$qry_ids) = each %ids_not_found) {
+                    print BADIDS "$id\t", join ",",@{$qry_ids};
+                    print BADIDS "\n";
+                }
+                close(BADIDS);
             }
         }
         print_OUT("   '-> done with NCBI webservices.")
@@ -295,10 +329,8 @@ foreach my $qry_seq (keys %S) {
             }
         }
         next if ($target_seq->{'pass_hard_thresold'} == 0);
-        if (not exists $gi_taxData{ $target_seq->{'subject_id'}}){
-            print_OUT("Something went wrong. I cannot find tax information for this sequence after having done all the work. [ $target_seq->{'subject'} ]");
-            next;
-        }
+        next if (not exists $gi_taxData{ $target_seq->{'subject_id'}}); # this ids have been printed to a file already.
+            
         my $lca = $gi_taxData{ $target_seq->{'subject_id'} }->{'lca_with_qry'};
         next if ($lca eq "diff_root");
         my $target_seq_stratum = $qry_ancestors_ranks{ $lca };
