@@ -229,9 +229,9 @@ if (defined $not_use_ncbi_entrez){
 } else {
     if (scalar @accs > 0){
         print_OUT("   '-> Using NCBI webservices to get taxonomy information on them. Trial [ $try_again_eutils ]");
-        print_OUT("   '-> It will use approximately [ " . round_up(0.5*(scalar @accs)/$ncbi_entrez_batch_size) . " ] queries.");
+        print_OUT("   '-> It will use approximately [ " . round_up((scalar @accs)/$ncbi_entrez_batch_size) . " ] queries.");
         while (scalar @accs > 0){
-            my $batch_size = 5000;
+            my $batch_size = 2500;
             $batch_size = scalar @accs if (scalar @accs < 5000);
             my @tmp_accs_list = splice(@accs,0, $batch_size);
             my $id_list = join ",",@tmp_accs_list;
@@ -241,10 +241,12 @@ if (defined $not_use_ncbi_entrez){
                             'email' => $EMAIL,
                             'tool' => $0,
                             'usehistory' => 'y',
+            
                             );
             # search on data for accessions
             %params = esearch(%params);
-            print_OUT("Identified entried for [ " . $params{count} . " ] ids.");
+            print_OUT("Identified entries for [ " . $params{count} . " ] ids.");
+            next if ($params{count} == 0);
             # define parameters needed for efetch
             $params{num} = $params{count};
             $params{outfile} = "$0.$$.tmp.sequence.file.txt";
@@ -296,6 +298,7 @@ if (defined $not_use_ncbi_entrez){
                 if (scalar (keys %ids_not_found) < $last_unmatched){
                     $last_unmatched = scalar (keys %ids_not_found);
                     goto(TRYAGAIN);
+                    sleep(20);
                 } else {
                     goto(PRINTUNMATCHED);
                 }
