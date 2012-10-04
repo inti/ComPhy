@@ -229,61 +229,65 @@ if (defined $not_use_ncbi_entrez){
     if (scalar @accs > 0){
         print_OUT("   '-> Using NCBI webservices to get taxonomy information on them. Trial [ $try_again_eutils ]");
         print_OUT("   '-> It will use approximately [ " . round_up(0.5*(scalar @accs)/$ncbi_entrez_batch_size) . " ] queries.");
-        my $id_list = join ",",@accs;
-        my %params = (
-                        'db' => 'protein',
-                        'term' => $id_list,
-                        'email' => $EMAIL,
-                        'tool' => $0,
-                        'usehistory' => 'y',
-                        );
-        # search on data for accessions
-        %params = esearch(%params);
-        print_OUT("Identified entried for [ " . $params{count} . " ] ids.");
-        # define parameters needed for efetch
-        $params{num} = $params{count};
-        $params{outfile} = "$0.$$.tmp.sequence.file.txt";
-        $params{retmode} = 'text';
-        $params{rettype} = 'gb';
-        $params{batch} = $ncbi_entrez_batch_size;
-        
-        # get the sequence files.
-        efetch_batch(%params);
-        my %matched_ids = ();
-        my $seqio = Bio::SeqIO->new( -file => $params{outfile}, -format => 'genbank' );
-        while( my $seq = $seqio->next_seq ) {
-            #print $seq->id,' ',$seq->species->node_name,' ',join " ",$seq->species->classification,"\n";
-            my %features = ();
-            for my $feat_object ($seq->get_SeqFeatures) {
-                if ($feat_object->has_tag("db_xref")){
-                    my ($id) = $feat_object->get_tag_values("db_xref");
-                    my ($type,$value) = split(/:/,$id);
-                    $features{$type} = $value;
+        while (scalar @accs > 0){
+            my $batch_size = 5000;
+            $batch_size = scalar @accs if (scalar @accs < 5000);
+            my @tmp_accs_list = splice(@accs,0, $batch_size);
+            my $id_list = join ",",@tmp_accs_list;
+            my %params = (
+                            'db' => 'protein',
+                            'term' => $id_list,
+                            'email' => $EMAIL,
+                            'tool' => $0,
+                            'usehistory' => 'y',
+                            );
+            # search on data for accessions
+            %params = esearch(%params);
+            print_OUT("Identified entried for [ " . $params{count} . " ] ids.");
+            # define parameters needed for efetch
+            $params{num} = $params{count};
+            $params{outfile} = "$0.$$.tmp.sequence.file.txt";
+            $params{retmode} = 'text';
+            $params{rettype} = 'gb';
+            $params{batch} = $ncbi_entrez_batch_size;
+            
+            # get the sequence files.
+            efetch_batch(%params);
+            my %matched_ids = ();
+            my $seqio = Bio::SeqIO->new( -file => $params{outfile}, -format => 'genbank' );
+            while( my $seq = $seqio->next_seq ) {
+                #print $seq->id,' ',$seq->species->node_name,' ',join " ",$seq->species->classification,"\n";
+                my %features = ();
+                for my $feat_object ($seq->get_SeqFeatures) {
+                    if ($feat_object->has_tag("db_xref")){
+                        my ($id) = $feat_object->get_tag_values("db_xref");
+                        my ($type,$value) = split(/:/,$id);
+                        $features{$type} = $value;
+                    }
                 }
+                next if (not defined $features{'taxon'});
+                my $taxid  = $features{'taxon'};
+                my $acc  = $seq->accession();
+                if (not defined $lineages{ $taxid }){
+                    my @sbjct_lineage = reverse $seq->species->classification;
+                    my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
+                    next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
+                    $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lineage'} = \@sbjct_lineage;
+                    $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lca_with_qry'} = $lca;
+                    $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
+                    $lineages{ $taxid }->{'lca_with_qry'} = $lca;
+                } else {
+                    $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lineage'} = $lineages{ $taxid }->{'lineage'};
+                    $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
+                }
+                # remove it from the list of ids not solved
+                if (not exists $ids_not_found{$accs_to_gi{ $acc }->{'full_id'} }){
+                    print "$acc ==> $accs_to_gi{ $acc }->{'full_id'}\n";
+                }
+                delete( $ids_not_found{$accs_to_gi{ $acc }->{'full_id'} }  );
             }
-            next if (not defined $features{'taxon'});
-            my $taxid  = $features{'taxon'};
-            my $acc  = $seq->accession();
-            if (not defined $lineages{ $taxid }){
-                my @sbjct_lineage = reverse $seq->species->classification;
-                my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
-                next if ($lca eq "diff_root"); # exclude those that have a different root to cell organisms.
-                $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lineage'} = \@sbjct_lineage;
-                $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lca_with_qry'} = $lca;
-                $lineages{ $taxid }->{'lineage'} =  \@sbjct_lineage;
-                $lineages{ $taxid }->{'lca_with_qry'} = $lca;
-            } else {
-                $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lineage'} = $lineages{ $taxid }->{'lineage'};
-                $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
-            }
-            # remove it from the list of ids not solved
-            if (not exists $ids_not_found{$accs_to_gi{ $acc }->{'full_id'} }){
-                print "$acc ==> $accs_to_gi{ $acc }->{'full_id'}\n";
-            }
-            delete( $ids_not_found{$accs_to_gi{ $acc }->{'full_id'} }  );
+            unlink($params{outfile});
         }
-        unlink($params{outfile});
-
         if (scalar (keys %ids_not_found) > 0){
             if ($try_again_eutils < $max_eutils_queries) {
                 $try_again_eutils++;
