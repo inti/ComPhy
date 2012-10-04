@@ -1,7 +1,5 @@
 #!/usr/bin/perl -w
 use strict;
-use LWP::Simple;
-use LWP::UserAgent;
 use Bio::SeqIO;
 use Bio::LITE::Taxonomy;
 use Bio::LITE::Taxonomy::NCBI;
