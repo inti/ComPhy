@@ -217,7 +217,8 @@ my @accs = ();
 my %accs_to_gi = ();
 foreach my $hidden (keys %ids_not_found){
     my @subject_id = split( /\|/,$hidden );
-    my ($accn) = ($subject_id[3] =~ m/(.*)\.\d+$/);
+     my $accn = $subject_id[3];
+($accn) =~ s/\.\d+$//;
     push @accs, $subject_id[1];
     #push @accs, $accn;
     $accs_to_gi{ $accn } = { 'accn' => $accn, 'gi' => $subject_id[1], 'full_id' => $hidden};
