@@ -37,7 +37,7 @@ GetOptions(
     'no_ncbi_entrez' => \$not_use_ncbi_entrez,
     'ncbi_entrez_batch_size=i' => \$ncbi_entrez_batch_size,
     'guess_qry_specie' => \$guess_qry_specie,
-    'max_eutils_queries' => \$max_eutils_queries,
+    'max_eutils_queries=i' => \$max_eutils_queries,
     'email' => \$EMAIL,
 ) or pod2usage(0);
 
