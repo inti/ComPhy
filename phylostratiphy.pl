@@ -217,10 +217,13 @@ my @accs = ();
 my %accs_to_gi = ();
 foreach my $hidden (keys %ids_not_found){
     my @subject_id = split( /\|/,$hidden );
-    push @accs, ($subject_id[3] =~ m/(.*)\.\d+$/);
-    $accs_to_gi{ $accs[-1] } = { 'gi' => $subject_id[1], 'full_id' => $hidden};
+    my ($accn) = ($subject_id[3] =~ m/(.*)\.\d+$/);
+    push @accs, $subject_id[1];
+    #push @accs, $accn;
+    $accs_to_gi{ $accn } = { 'accn' => $accn, 'gi' => $subject_id[1], 'full_id' => $hidden};
+    #$accs_to_gi{ $subject_id[1] } = { 'accn' => $accn, 'gi' => $subject_id[1], 'full_id' => $hidden};
 }
-print_OUT("There were [ " . scalar @accs . " ] subject ids from blast search unmatched with local taxonomy DBs");
+print_OUT("There were [ " . (scalar @accs)/2 . " ] subject ids from blast search unmatched with local taxonomy DBs");
 if (defined $not_use_ncbi_entrez){
     print_OUT("   '-> Printing this ids to [ $out.ids_without_taxonomy_information.txt ].");
     open(OUT,">$out.ids_without_taxonomy_information.txt") or die $!;
@@ -238,14 +241,21 @@ if (defined $not_use_ncbi_entrez){
             my %params = (
                             'db' => 'protein',
                             'term' => $id_list,
+                            'id' => $id_list,
                             'email' => $EMAIL,
                             'tool' => $0,
                             'usehistory' => 'y',
-            
+                            'WebEnv' => "",            
                             );
             # search on data for accessions
             %params = esearch(%params);
-            print_OUT("Identified entries for [ " . $params{count} . " ] ids.");
+            # Uncomment this section to try with epost
+            #my %epost_result = epost_uids(%params);
+            #$params{'WebEnv'} = $epost_result{'WebEnv'};
+            #$params{'query_key'} = $epost_result{'query_key'};
+            #$params{count} = $epost_result{count};
+            # end section for epost
+            print_OUT("Identified [ " . $params{count} . " ] entries.");
             next if ($params{count} == 0);
             # define parameters needed for efetch
             $params{num} = $params{count};
@@ -259,7 +269,6 @@ if (defined $not_use_ncbi_entrez){
             my %matched_ids = ();
             my $seqio = Bio::SeqIO->new( -file => $params{outfile}, -format => 'genbank' );
             while( my $seq = $seqio->next_seq ) {
-                #print $seq->id,' ',$seq->species->node_name,' ',join " ",$seq->species->classification,"\n";
                 my %features = ();
                 for my $feat_object ($seq->get_SeqFeatures) {
                     if ($feat_object->has_tag("db_xref")){
@@ -269,8 +278,8 @@ if (defined $not_use_ncbi_entrez){
                     }
                 }
                 next if (not defined $features{'taxon'});
-                my $taxid  = $features{'taxon'};
                 my $acc  = $seq->accession();
+                my $taxid  = $features{'taxon'};
                 if (not defined $lineages{ $taxid }){
                     my @sbjct_lineage = reverse $seq->species->classification;
                     my $lca = get_lca_from_lineages(\@sbjct_lineage,\@ql); # need double checking on the ones that do not give match
@@ -284,9 +293,6 @@ if (defined $not_use_ncbi_entrez){
                     $gi_taxData{ $accs_to_gi{ $acc }->{'gi'} }->{'lca_with_qry'} = $lineages{ $taxid }->{'lca_with_qry'};
                 }
                 # remove it from the list of ids not solved
-                if (not exists $ids_not_found{$accs_to_gi{ $acc }->{'full_id'} }){
-                    print "$acc ==> $accs_to_gi{ $acc }->{'full_id'}\n";
-                }
                 delete( $ids_not_found{$accs_to_gi{ $acc }->{'full_id'} }  );
             }
             unlink($params{outfile});
