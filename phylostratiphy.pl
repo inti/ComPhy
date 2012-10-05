@@ -231,7 +231,7 @@ if (defined $not_use_ncbi_entrez){
         print_OUT("   '-> Using NCBI webservices to get taxonomy information on them. Trial [ $try_again_eutils ]");
         print_OUT("   '-> It will use approximately [ " . round_up((scalar @accs)/$ncbi_entrez_batch_size) . " ] queries.");
         while (scalar @accs > 0){
-            my $batch_size = 2500;
+            my $batch_size = 1000;
             $batch_size = scalar @accs if (scalar @accs < 5000);
             my @tmp_accs_list = splice(@accs,0, $batch_size);
             my $id_list = join ",",@tmp_accs_list;
