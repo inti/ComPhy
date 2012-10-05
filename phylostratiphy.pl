@@ -221,9 +221,13 @@ foreach my $hidden (keys %ids_not_found){
     push @accs, $subject_id[1];
     #push @accs, $accn;
     $accs_to_gi{ $accn } = { 'accn' => $accn, 'gi' => $subject_id[1], 'full_id' => $hidden};
+    if (defined $subject_id[4]){
+	$accs_to_gi{ $subject_id[4] } = { 'accn' => $subject_id[4], 'gi' => $subject_id[1], 'full_id' => $hidden};
+	push @accs, $subject_id[4];
+    }
     #$accs_to_gi{ $subject_id[1] } = { 'accn' => $accn, 'gi' => $subject_id[1], 'full_id' => $hidden};
 }
-print_OUT("There were [ " . (scalar @accs)/2 . " ] subject ids from blast search unmatched with local taxonomy DBs");
+print_OUT("There were [ " . (scalar @accs) . " ] subject ids from blast search unmatched with local taxonomy DBs");
 if (defined $not_use_ncbi_entrez){
     print_OUT("   '-> Printing this ids to [ $out.ids_without_taxonomy_information.txt ].");
     open(OUT,">$out.ids_without_taxonomy_information.txt") or die $!;
@@ -269,6 +273,8 @@ if (defined $not_use_ncbi_entrez){
             my %matched_ids = ();
             my $seqio = Bio::SeqIO->new( -file => $params{outfile}, -format => 'genbank' );
             while( my $seq = $seqio->next_seq ) {
+		my $acc  = $seq->accession();
+		next if (not exists $accs_to_gi{ $acc }->{'gi'});
                 my %features = ();
                 for my $feat_object ($seq->get_SeqFeatures) {
                     if ($feat_object->has_tag("db_xref")){
@@ -278,7 +284,6 @@ if (defined $not_use_ncbi_entrez){
                     }
                 }
                 next if (not defined $features{'taxon'});
-                my $acc  = $seq->accession();
                 my $taxid  = $features{'taxon'};
                 if (not defined $lineages{ $taxid }){
                     my @sbjct_lineage = reverse $seq->species->classification;
