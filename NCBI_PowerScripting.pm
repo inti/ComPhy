@@ -771,7 +771,7 @@ sub efetch_batch {
     
     close OUT;
     
-    print_OUT("Wrote data to $params{outfile}.");
+    #print_OUT("Wrote data to $params{outfile}.");
     
 }
 
@@ -1753,7 +1753,19 @@ sub epost_uids {
     $raw =~ /<QueryKey>(\d+)<\/QueryKey>.*<WebEnv>(\S+)<\/WebEnv>/s;
     $results{query_key} = $1;
     $results{WebEnv} = $2;
+    # Section added by Inti Pedroso: 5 oct 2012
+    # count number of results
+    my %count_results = %params;
+    $count_results{'WebEnv'}= $results{'WebEnv'};
+    $count_results{'query_key'}= $results{'query_key'};
+    $count_results{term} = "%23" . "$results{'query_key'}";
+    $count_results{usehistory} = 'y';
     
+    %count_results = esearch(%params);
+    
+    $results{count} = $count_results{count};
+    # End section added by Inti Pedroso: 5 oct 2012
+
     $end = time;
     $delay = $maxdelay - ($end - $begin);
     if ($delay < 0) { $delay = 0; }
