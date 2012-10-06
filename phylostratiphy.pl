@@ -17,7 +17,7 @@ use PhyloStratiphytUtils;
 use NCBI_PowerScripting;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
-        $use_coverage, $hard_threshold, $soft_threshold, $gi_tax_id_info,$blastdbcmd,
+        $use_coverage, $hard_threshold, $soft_threshold,$blastdbcmd,
         $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL );
 
 GetOptions(
@@ -31,7 +31,6 @@ GetOptions(
     'out|o=s' => \$out,
     'hard_threshold|hard=f' => \$hard_threshold,
     'soft_threshold|soft' => \$soft_threshold,
-    'gi_tax_id=s' => \$gi_tax_id_info,  # dysbindin.tax_info.csv
     'blastdbcmd=s' => \$blastdbcmd,
     'seq_db|db=s' => \$seq_db,
     'no_ncbi_entrez' => \$not_use_ncbi_entrez,
@@ -43,7 +42,7 @@ GetOptions(
 
 pod2usage(0) if (defined $help);
 pod2usage(-exitstatus => 2, -verbose => 2) if (defined $man);
-pod2usage(-exitstatus => 2, -verbose => 2) if (not defined $EMAIL);
+pod2usage(-exitstatus => 2, -verbose => 2) if (not defined $EMAIL and not defined $not_use_ncbi_entrez);
 
 
 #### DEFINE SOME DEFAULT VALUES #############
@@ -419,16 +418,14 @@ B<This program> will perform a PhyloStratigraphy analysis. It provides a impleme
     -h, --help		print help message
     -m, --man		print complete documentation
  
-    Input Files
+    Input
     -blast         Output from blast (Required)
     -tax_folder    Folder with taxonomy information (Required)
-    -blast_format  Format of blast output (Not yet functional)
+    -blast_format  Format of blast output. Options: table (blast softwar table), paralign. (Required)
     -query_taxon   Taxnomy identifier of query specie. (Required)
-    -seq_db        Path or name to sequence db in blast format. (Optional)
-    -blastdbcmd    Path to blastdbcmd executable (Optional)
-    -gi_tax_id     Tabe with taxonomy information for the target sequences of the blast output (Optional)
+    -email         Email address to send queries to NCBI (Required unless defined -no_ncbi_entrez).
  
-    Output Files
+    Output
     -o, --o        Name of output files (Required)
 
     Analysis options
@@ -455,38 +452,25 @@ Print help message
 Print complete documentation
 
 =item B<-blast>
+ 
  Output from blast
  
 =item B<-tax_folder>
  
- Folder with taxonomy information
+ Folder with taxonomy information. It is recommented that you build it with the get_taxonomy_data.sh script. This script will download all necessary files from NCBI website and compress the Gi to Taxonomy id files. 
  
 =item B<-blast_format>  
  
- Format of blast output
-
-=item B<-virus_list>    
- 
- List with ids of viral taxons
+ Format of blast output. Options: table (blast softwar table), paralign. (Required)
  
 =item B<-query_taxon>   
  
  Taxnomy identifier of query specie. User must use the id provided by the NCBI Taxonomy database, e.g, human = 9606 and Acromyrmex echinatior = 103372.
+  
+=item B<-email>
  
-=item B<-seq_db> 
+ Email address to send queries to NCBI (Required unless defined -no_ncbi_entrez).
  
- Path or name to sequence db in blast format. If nor provided it will be set to 'nr' and it will be assumed that you have set the  ~/.ncbirc as indicated on the BLAST documentation with the path to the folder where the sequence databased are stored, i.e., the $BLASTDB enviromental variable has been set.
-
-=item B<-blastdbcmd>
-
- Path to blastdbcmd executable. If not provided it will be assumed that it can found with the command `which blastdbcmd`
-
-=item B<-gi_tax_id>
- 
- Tabe with taxonomy information for the target sequences of the blast output. This table has the format obtained by extrating the taxonomy information the sequence db with the following command (as it is done internally by the software)
- >blastdbcmd -outfmt "%a,%g,%T,%L,%S" -entry_batch file_with_sequence_ids.txt -db seq_db -out output_file.csv
- where seq_db is whatever the -seq_db as been set to and output_file.csv is the file that you need to provide to the -gi_tax_id option. If this option is not provided this command will be run internally and you will get the file as "out".gi_tax_id.csv, where "out" is the whatever you provide to the option -o, --out
-
 =item B<-o, --out>
  
  Name of output files
@@ -525,14 +509,34 @@ TODO
 
 =over 8
 
-=item B<1. Basic Analysis>
+=item B<1. Get taxonomy data>
+ 
+To get the taxonomy data type
+
+>./get_taxonomy_data.sh
+
+That will create the folder "ncbi_tax_data", download the necessay files and parse to be ready for analyses.
+ 
+=item B<2. Basic Analysis>
 
 To run the analyses with a small example do
 
->my_perl phylostratiphy.pl -blast dysbindin.blast_out.txt -tax_folder data/ -query_taxon 9606 -virus_list tmp.virus.txt -out test_phylostratiphy
+>perl phylostratiphy.pl  -tax_folder ncbi_tax_data/ -query_taxon 9606 -out test_phylostratiphy -blast_format table -blast example/dysbindin.blast_out.txt -email youremail@something.com
 
 The example consistes of human sequences and so -query_taxon 9606 corresponds to the human tax id.
-MORE TO COME
+
+=item B<3. Guess query specie>
+ 
+To run the analyses with a small example do
+ 
+>perl phylostratiphy.pl  -tax_folder ncbi_tax_data/ -guess_qry_specie -out test_phylostratiphy -blast_format table -blast example/dysbindin.blast_out.txt -email youremail@something.com
+
+Here we replace the -query_taxon 9606 option for -guess_qry_specie. In this case part of the output will be 
+
+ Sat Oct  6 19:04:43 2012	Query specie id not provided. Guessing query specie based on blast results.
+ Sat Oct  6 19:04:43 2012	   '-> I am gessing that query specie NCBI Taxonomy id is [ 9606 ].
+
+You should always confirm that the specie that the program is assigning to the query sequences is correct!
  
  
 =back
