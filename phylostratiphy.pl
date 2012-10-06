@@ -74,7 +74,7 @@ foreach my $file (@$blast_out){
         @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
     }
 }
-print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] sequences.");
+print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] query and target [ " . scalar (values %S) . " ] sequences.");
 
 #### LOAD TAXONOMY DB
 print_OUT("Reading taxonomy information");
@@ -217,8 +217,8 @@ my @accs = ();
 my %accs_to_gi = ();
 foreach my $hidden (keys %ids_not_found){
     my @subject_id = split( /\|/,$hidden );
-     my $accn = $subject_id[3];
-($accn) =~ s/\.\d+$//;
+    my $accn = $subject_id[3];
+    $accn =~ s/\.\d+$//;
     push @accs, $subject_id[1];
     #push @accs, $accn;
     $accs_to_gi{ $accn } = { 'accn' => $accn, 'gi' => $subject_id[1], 'full_id' => $hidden};
