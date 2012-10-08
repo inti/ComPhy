@@ -273,8 +273,8 @@ if (defined $not_use_ncbi_entrez){
             my %matched_ids = ();
             my $seqio = Bio::SeqIO->new( -file => $params{outfile}, -format => 'genbank' );
             while( my $seq = $seqio->next_seq ) {
-		my $acc  = $seq->accession();
-		next if (not exists $accs_to_gi{ $acc }->{'gi'});
+            my $acc  = $seq->accession();
+            next if (not exists $accs_to_gi{ $acc }->{'gi'});
                 my %features = ();
                 for my $feat_object ($seq->get_SeqFeatures) {
                     if ($feat_object->has_tag("db_xref")){
@@ -335,6 +335,7 @@ my %qry_ancestors_ranks = ();
 my $c = 0;
 map { $qry_ancestors_ranks{$_} = $c++;   } @ql;
 my %PhyloStratum_scores = ();
+my %SoftPhyloScores = ();
 foreach my $qry_seq (keys %S) {
     my $oldest_stratum = scalar @ql - 1;
     foreach my $target_seq ( @{ $S{ $qry_seq } } ){
@@ -342,14 +343,25 @@ foreach my $qry_seq (keys %S) {
         #        getc;
         if (ref($target_seq) eq 'ARRAY'){
             if (scalar @{$target_seq} == 0){
+                $SoftPhyloScores{ $qry_seq }->{ $ql[-1] } = 100;
                 goto(WITHOUT_HITS);
             }
         }
-        next if ($target_seq->{'pass_hard_thresold'} == 0);
         next if (not exists $gi_taxData{ $target_seq->{'subject_id'}}); # this ids have been printed to a file already.
-            
         my $lca = $gi_taxData{ $target_seq->{'subject_id'} }->{'lca_with_qry'};
         next if ($lca eq "diff_root");
+        if (defined $soft_threshold){
+            if (exists $SoftPhyloScores{ $qry_seq }->{ $lca }){
+                if ($SoftPhyloScores{ $qry_seq }->{ $lca } > $target_seq->{'pvalue'} ){
+                    print "$SoftPhyloScores{ $qry_seq }->{ $lca } > $target_seq->{'pvalue'}";
+                    getc;
+                    $SoftPhyloScores{ $qry_seq }->{ $lca } = $target_seq->{'pvalue'};
+                }
+            } else {
+                $SoftPhyloScores{ $qry_seq }->{ $lca } = $target_seq->{'pvalue'};
+            }
+        }
+        next if ($target_seq->{'pass_hard_thresold'} == 0);
         my $target_seq_stratum = $qry_ancestors_ranks{ $lca };
         if ($target_seq_stratum < $oldest_stratum) {
             $oldest_stratum = $target_seq_stratum ;
@@ -381,9 +393,28 @@ while (my ($qry_id,$qry_scores) = each %PhyloStratum_scores) {
     $phyloScoresTable .= join "\t", ($qry_id,@$qry_scores);
     $phyloScoresTable .= "\n";
 }
-open(OUT,">$out.txt") or die $!;
+open(OUT,">$out.hard_score.txt") or die $!;
 print OUT $phyloScoresTable;
 close(OUT);
+
+open (SOFT,"$out.soft_score.txt") or die $!;
+# Pring soft scores
+print  SOFT "ID\t",join "\t", @ql;
+print  SOFT "\n";
+while (my ($qry_id,$qry_scores) = each %SoftPhyloScores) {
+    my $last = 1;
+    my $line = $qry_id;
+    foreach my $stratum (@ql){
+        if (exists $SoftPhyloScores{ $qry_id }->{ $stratum }){
+            if ($SoftPhyloScores{ $qry_id }->{ $stratum } < $last){
+                $last = $SoftPhyloScores{ $qry_id }->{ $stratum };
+            }
+        }
+        $line .= "\t" . -1*log($last);
+    }
+    print  SOFT "$line\n";
+}
+close(SOFT);
 
 print_OUT("Done");
 
