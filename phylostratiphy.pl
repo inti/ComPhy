@@ -397,7 +397,7 @@ open(OUT,">$out.hard_score.txt") or die $!;
 print OUT $phyloScoresTable;
 close(OUT);
 
-open (SOFT,"$out.soft_score.txt") or die $!;
+open (SOFT,">$out.soft_score.txt") or die $!;
 # Pring soft scores
 print  SOFT "ID\t",join "\t", @ql;
 print  SOFT "\n";
