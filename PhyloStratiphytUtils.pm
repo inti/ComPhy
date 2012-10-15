@@ -20,8 +20,42 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw(calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw(calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw(blosum62_self_scoring calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
+@EXPORT_OK = qw(blosum62_self_scoring calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+
+sub blosum62_self_scoring {
+    my $seq = shift;
+    my %blosum62_diagonal = (
+                            'C' => 9,
+                            'S' => 4,
+                            'T' => 4,
+                            'P' => 7,
+                            'A' => 6,
+                            'G' => 4,
+                            'N' => 6,
+                            'D' => 6,
+                            'E' => 5,
+                            'Q' => 5,
+                            'H' => 8,
+                            'R' => 5,
+                            'K' => 5,
+                            'M' => 5,
+                            'I' => 4,
+                            'L' => 4, 
+                            'V' => 4, 
+                            'F' => 6, 
+                            'Y' => 7, 
+                            'W' => 11,
+                            '*' => 1,
+                            'X' => 1);
+    my $score = 0;
+    foreach my $aa (split('',$seq)){
+        $score += $blosum62_diagonal{uc($aa)};
+    }
+    my $lambda =  0.252;
+    my $K = 0.035;
+    return(( $lambda*$score - log($K) )/log(2));
+}
 
 sub calculate_soft_score{
     my $seq_data = shift;
