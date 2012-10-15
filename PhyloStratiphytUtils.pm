@@ -20,8 +20,17 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw(parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw(parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw(calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
+@EXPORT_OK = qw(calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+
+sub calculate_soft_score{
+    my $seq_data = shift;
+    my $score_type = shift;
+    if ($score_type == 1){
+        return($seq_data->{'coverage'}*(1 - $seq_data->{'pvalue'})*$seq_data->{'score'});
+    }
+    return(-1);
+}
 
 sub round_up {
     my $number = shift;
@@ -84,8 +93,8 @@ sub parse_paralign_table {
         $p_value = pdl 1 - $p_value;
         $p_value = pdl $e_value if ($p_value == 0);
         #### BOTH COVERAGE AND %IDENTITY ARE NOT WELL CALCULATED HERE. THIS NEEDS TO BE REVIEWED.
-        my $coverage = $data[ $fields{'alignment_length'}]/$data[ $fields{'subject_length'}];
-        my $percent_identity = 100*$data[ $fields{'n_identical_symbols'}]/$data[ $fields{'alignment_length'}];
+        my $coverage = $data[ $fields{'alignment_length'} ];
+        my $percent_identity = $data[ $fields{'n_identical_symbols'} ];
         $data[ $fields{'query_id'}] =~ s/ /_/g;
         my $frame = 0;
         push @{ $back{ $data[ $fields{'query_id'}] }  }, {  'subject_id' => $subject_id[1],
@@ -162,7 +171,7 @@ sub parse_blast_table {
                                                             'evalue' => $e_value,
                                                             'coverage' => $coverage,
                                                             'frames' => $frame,
-                                                            'percent_identity' => $data[ $fields{'percent_identity'}],
+                                                            'percent_identity' => $data[ $fields{'percent_identity'}]/100,
                                                           };
 
     }
