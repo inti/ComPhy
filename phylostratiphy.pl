@@ -57,7 +57,7 @@ defined $blast_format or $blast_format = 'table';
 defined $ncbi_entrez_batch_size or $ncbi_entrez_batch_size = 500;
 $ncbi_entrez_batch_size = 500 if ($ncbi_entrez_batch_size > 500);
 defined $max_eutils_queries or $max_eutils_queries = 0;
-
+defined $score_type or $score_type = 1;
 
 print_OUT("Starting to parse blast output");
 
@@ -385,18 +385,18 @@ foreach my $qry_seq (keys %S) {
         next if (not exists $gi_taxData{ $target_seq->{'subject_id'}}); # this ids have been printed to a file already.
         my $lca = $gi_taxData{ $target_seq->{'subject_id'} }->{'lca_with_qry'};
         next if ($lca eq "diff_root");
-        if (defined $soft_threshold){
+        
+        if (defined $soft_threshold){ # work on soft-scores
+            my $soft_score = calculate_soft_score($target_seq,$score_type);
             if (exists $SoftPhyloScores{ $qry_seq }->{ $lca }){
-                if ($SoftPhyloScores{ $qry_seq }->{ $lca } > $target_seq->{'pvalue'} ){
-                    print "$SoftPhyloScores{ $qry_seq }->{ $lca } > $target_seq->{'pvalue'}";
-                    getc;
-                    $SoftPhyloScores{ $qry_seq }->{ $lca } = $target_seq->{'pvalue'};
+                if ($SoftPhyloScores{ $qry_seq }->{ $lca } < $soft_score ){
+                    $SoftPhyloScores{ $qry_seq }->{ $lca } = $soft_score;
                 }
             } else {
-                $SoftPhyloScores{ $qry_seq }->{ $lca } = $target_seq->{'pvalue'};
+                $SoftPhyloScores{ $qry_seq }->{ $lca } = $soft_score;
             }
         }
-        next if ($target_seq->{'pass_hard_thresold'} == 0);
+        next if (defined $hard_threshold and $target_seq->{'pass_hard_thresold'} == 0);
         my $target_seq_stratum = $qry_ancestors_ranks{ $lca };
         if ($target_seq_stratum < $oldest_stratum) {
             $oldest_stratum = $target_seq_stratum ;
@@ -433,31 +433,37 @@ print OUT $phyloScoresTable;
 close(OUT);
 
 open (SOFT,">$out.soft_score.txt") or die $!;
-# Pring soft scores
+# ##### PRINT SOFT-SCORES ########
+# soft scores are defined as: coverage*(1 - pvalue)*score.
+# This conveys information on how much of the query sequence in being capture (coverage),
+# how well it is being capture (score) and how likely is this alignment not to be by chance (1 - pvalue).
+# All soft-scores are normalised on [0,1] scale to solve the problem the the alignment scores is not normalised.
 print  SOFT "ID\t",join "\t", @ql;
 print  SOFT "\n";
 while (my ($qry_id,$qry_scores) = each %SoftPhyloScores) {
     my $last = 1;
-    my $line = $qry_id;
+    my $scores;
     foreach my $stratum (@ql){
         if (exists $SoftPhyloScores{ $qry_id }->{ $stratum }){
-            if ($SoftPhyloScores{ $qry_id }->{ $stratum } < $last){
+            if ($SoftPhyloScores{ $qry_id }->{ $stratum } > $last){
                 $last = $SoftPhyloScores{ $qry_id }->{ $stratum };
             }
         }
-        $line .= "\t" . -1*log($last);
+        push @{ $scores }, $last;
     }
-    print  SOFT "$line\n";
+    $scores = flat pdl $scores;
+    my $nelem = $scores->nelem;
+    $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
+    $scores /= $scores->sum;
+    print  SOFT "$qry_id\t", join "\t",list $scores;
+    print SOFT "\n";
 }
+
 close(SOFT);
 
 print_OUT("Done");
 
 exit;
-
-# TODO:
-# 3- implement soft-coded
-# 4- guess specie
 
 
 __END__
@@ -547,8 +553,8 @@ Print complete documentation
 
 =item B<-soft, --soft_threshold>
  
- Uses a softhreshols strategy that aims to account for coverage and uncertaintiy of blast results.
-
+ The original methodology relies on assigning 0 or 1 scores to phylostratum depending on whether we find an similar sequence using a e-value threshold for the sequence similarity search. This method has as potential drawback thet arbitrary value the e-value threshold. To use out soft-threshold strategy add the option -soft or --soft_threshold. The scores represents: coverage*(1-p_value)*score, where the coverage is the lengthg of the alignment divided by the lenght of the query sequence, score is the bit-scores of the alignment and p_value is equal to exp(-e_value) (probability of finding at least 1 hist with score equal or larger than the alignment score). The reported score correspond to the largest on each phylostratum. Due to the nested structure of the phylostratum we only score a stratum based on sequences not present on its descendants that are part of teh lineage of the query sequences. For example, the human lineage is Homininae->Homo->Homo sapiens, so the score of Homininae will be calculated with sequences on Homininae but not present on Homo or any descendant on Homo. In this way the score represent a continous measure of the best available evidence that the query sequence had a homologues at that phylostratum. The resulting scores will be scaled between 0 and 1 and each phylostratum will have its own score. A output file called *.soft_score.txt will have the soft-threshold scores. The normal output with 0/1 entries will still be produced.
+ 
 =item B<-use_coverage>
  
  Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
@@ -587,7 +593,13 @@ That will create the folder "ncbi_tax_data", download the necessay files and par
 
 To run the analyses with a small example do
 
->perl phylostratiphy.pl  -tax_folder ncbi_tax_data/ -query_taxon 9606 -out test_phylostratiphy -blast_format table -blast example/dysbindin.blast_out.txt -email youremail@something.com
+>perl phylostratiphy.pl  \
+    -tax_folder ncbi_tax_data/ \
+    -query_taxon 9606 \
+    -out test_phylostratiphy \
+    -blast_format table \
+    -blast example/dysbindin.blast_out.txt \
+    -email youremail@something.com
 
 The example consistes of human sequences and so -query_taxon 9606 corresponds to the human tax id.
 
@@ -595,7 +607,13 @@ The example consistes of human sequences and so -query_taxon 9606 corresponds to
  
 To run the analyses with a small example do
  
->perl phylostratiphy.pl  -tax_folder ncbi_tax_data/ -guess_qry_specie -out test_phylostratiphy -blast_format table -blast example/dysbindin.blast_out.txt -email youremail@something.com
+>perl phylostratiphy.pl  \
+    -tax_folder ncbi_tax_data/ \
+    -guess_qry_specie \
+    -out test_phylostratiphy \
+    -blast_format table \
+    -blast example/dysbindin.blast_out.txt \
+    -email youremail@something.com
 
 Here we replace the -query_taxon 9606 option for -guess_qry_specie. In this case part of the output will be 
 
@@ -603,6 +621,21 @@ Here we replace the -query_taxon 9606 option for -guess_qry_specie. In this case
  Sat Oct  6 19:04:43 2012	   '-> I am gessing that query specie NCBI Taxonomy id is [ 9606 ].
 
 You should always confirm that the specie that the program is assigning to the query sequences is correct!
+ 
+=item B<4. Obtain soft-scores>
+ 
+The original methodology relies on assigning 0 or 1 scores to phylostratum depending on whether we find an similar sequence using a e-value threshold for the sequence similarity search. This method has as potential drawback thet arbitrary value the e-value threshold. To use out soft-threshold strategy add the option -soft or --soft_threshold. The resulting scores will be scaled between 0 and 1 and each phylostratum will have its own score.
+ 
+>perl phylostratiphy.pl  \
+    -tax_folder ncbi_tax_data/ \
+    -query_taxon 9606 \
+    -out test_phylostratiphy \
+    -blast_format table \
+    - blast example/dysbindin.blast_out.txt \
+    -email youremail@something.com
+    -soft
+ 
+A output file called *.soft_score.txt will have the soft-threshold scores. The normal output with 0/1 entries will still be produced.
  
  
 =back
