@@ -113,8 +113,10 @@ foreach my $taxid (keys %taxons){
 }
 open  (OUT,">$out") or die $!;
 while ( my ($level,$count) = each %ancestors){
-    print "$level\t$count\n";
+    print OUT "$level\t$count\n";
 }
+close(OUT);
+
 
 print_OUT("Finished");
 exit;
