@@ -59,12 +59,15 @@ $ncbi_entrez_batch_size = 500 if ($ncbi_entrez_batch_size > 500);
 defined $max_eutils_queries or $max_eutils_queries = 0;
 defined $score_type or $score_type = 1;
 
+not defined $seqs and print_OUT("WARNING: You did not provide a file with the original sequences in fasta format. This is needed if your specie of interest is not on the database");
+
 print_OUT("Starting to parse blast output");
 
 ### define some variables to start storing the results
+
 my %S = (); # hash will store to score for each species.
 # loop over blast results.
-# for each hit we will store the log(p-value) of the blast hit for each taxon of the tartget sequence.
+
 foreach my $file (@$blast_out){
     #print_OUT("   '-> [ $file ]");
     if ($blast_format eq 'table'){
@@ -73,42 +76,46 @@ foreach my $file (@$blast_out){
     } elsif ($blast_format eq 'paralign'){
         my $parsed_blast_out = parse_paralign_table($file);
         @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
-        if (defined $soft_threshold){
-            if (defined $seqs) {
-                print_OUT("Reading input sequences from [ $seqs ].");
-                my %seq_size = (); # PARALIGN results do not provide output for sequences without hits neither the size of the quert sequence. the program will read the input sequences and store its ids and the size
-                my $in  = Bio::SeqIO->new(-file => $seqs, -format => 'fasta');
-                while ( my $qry_seq = $in->next_seq() ) {
-                    my $header = join "_",$qry_seq->id,$qry_seq->description();
-                    $header =~ s/ /_/g;
-                    $seq_size{ $header } = length $qry_seq->seq;
-                }
-                $in->close();
-                while (my ($qry_seq,$blast_subjects) = each %S){
-                    # loop over blast results for this query sequence
-                    if (not defined $seq_size{$qry_seq}){
-                        print_OUT("From PARALIGN search output I got this id [ $qry_seq ] which I could not find on the in put sequence file");
-                        next;
-                    }
-                    my $qry_size = $seq_size{$qry_seq};
-                    for (my $i = 0 ; $i < scalar @{$blast_subjects}; $i++){
-                        $S{$qry_seq}->[$i]->{'coverage'} /= $seq_size{$qry_seq};
-                        $S{$qry_seq}->[$i]->{'percent_identity'} /= $seq_size{$qry_seq};
-                    }
-                    delete($seq_size{$qry_seq});
-                }
-                foreach my $qry_id (keys %seq_size) {
-                    $S{$qry_id} = [] if (not defined $S{$qry_id});
-                }
-            } else {
-                print_OUT("PARALIGN search output does not provide query sequence lengths and I need this to use soft-scoring methods. Get the original sequences use on the search and provide them with the option -seq");
-                print_OUT("Bye");
-                exit(1);
-            }
+    }
+}
+
+print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] query and target [ " . scalar (values %S) . " ] sequences.");
+
+my %self_score = (); # store the self score. to be use when sequence do not have a perfect match on the db.
+my %seq_size = (); # PARALIGN results do not provide output for sequences without hits neither the size of the quert sequence. the program will read the input sequences and store its ids and the size
+if (defined $seqs) {
+    print_OUT("Reading input sequences from [ $seqs ].");
+    my $in  = Bio::SeqIO->new(-file => $seqs, -format => 'fasta');
+    while ( my $qry_seq = $in->next_seq() ) {
+        my $header = join "_",$qry_seq->id,$qry_seq->description();
+        $header =~ s/ /_/g;
+        $seq_size{ $header } = $qry_seq->seq;
+    }
+    $in->close();
+    while (my ($qry_seq,$blast_subjects) = each %S){
+        # loop over blast results for this query sequence
+        if (not defined $seq_size{$qry_seq}){
+            print_OUT("From sequence search output I got this id [ $qry_seq ] which I could not find on the in put sequence file");
+            next;
+        }
+        my $qry_size = length $seq_size{$qry_seq};
+        for (my $i = 0 ; $i < scalar @{$blast_subjects}; $i++){
+            $S{$qry_seq}->[$i]->{'coverage'} /= $qry_size;
+            $S{$qry_seq}->[$i]->{'percent_identity'} /= $qry_size;
         }
     }
 }
-print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] query and target [ " . scalar (values %S) . " ] sequences.");
+if (defined $soft_threshold){
+    if (defined $seqs) {
+        foreach my $qry_id (keys %seq_size) {
+            $S{$qry_id} = [] if (not defined $S{$qry_id});
+        }        
+        print_OUT("After adding sequences on [ $seqs ] not present on sequence search output we have [ " . scalar (keys %S) . " ] query sequences");
+
+    } else {
+        print_OUT("WARNING: Soft-threshold needs the query sequence lengths. Get the original sequences use on the search and provide them with the option -seq");
+    }
+}
 
 #### LOAD TAXONOMY DB
 print_OUT("Reading taxonomy information");
@@ -135,9 +142,6 @@ if (defined $guess_qry_specie){
         # loop over blast results for this query sequence
         my $target_counter = -1; # set to -1 so that first item sets it to 0.
         foreach my $target_seqs (@{$blast_subjects}){
-            if (ref($target_seqs) eq 'ARRAY'){
-                next if (scalar @{$target_seqs} == 0);
-            }
             next if ($target_seqs->{'evalue'} > $hard_threshold);
             my $sbjct_taxid = $taxNCBI->get_taxid( $target_seqs->{'subject_id'} );
             if ($sbjct_taxid == 0){
@@ -166,11 +170,9 @@ my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
 while (my ($qry_seq,$blast_subjects) = each %S){
     # loop over blast results for this query sequence
     my $target_counter = -1; # set to -1 so that first item sets it to 0.
+    next if (scalar @{$blast_subjects} == 0); # skip if this query did not have blast hits.
     foreach my $target_seqs (@{$blast_subjects}){
         $target_counter++;
-        if (ref($target_seqs) eq 'ARRAY'){
-            next if (scalar @{$target_seqs} == 0); # skip if this query did not have blast hits.
-        }
         ## Filter blast results.
         # if using hard threshold then remove hits by e-value
         if (defined $hard_threshold){
@@ -371,17 +373,11 @@ my $c = 0;
 map { $qry_ancestors_ranks{$_} = $c++;   } @ql;
 my %PhyloStratum_scores = ();
 my %SoftPhyloScores = ();
+my $num_query_ancestors = scalar @ql;
 foreach my $qry_seq (keys %S) {
-    my $oldest_stratum = scalar @ql - 1;
+    my $oldest_stratum = $num_query_ancestors - 1;
+    $SoftPhyloScores{ $qry_seq }->{ $ql[-1] } =  blosum62_self_scoring($seq_size{$qry_seq});
     foreach my $target_seq ( @{ $S{ $qry_seq } } ){
-        #print Dumper($target_seq);
-        #        getc;
-        if (ref($target_seq) eq 'ARRAY'){
-            if (scalar @{$target_seq} == 0){
-                $SoftPhyloScores{ $qry_seq }->{ $ql[-1] } = 100;
-                goto(WITHOUT_HITS);
-            }
-        }
         next if (not exists $gi_taxData{ $target_seq->{'subject_id'}}); # this ids have been printed to a file already.
         my $lca = $gi_taxData{ $target_seq->{'subject_id'} }->{'lca_with_qry'};
         next if ($lca eq "diff_root");
@@ -402,8 +398,7 @@ foreach my $qry_seq (keys %S) {
             $oldest_stratum = $target_seq_stratum ;
         }
     }
-WITHOUT_HITS:
-    my @phyloScores = list zeroes scalar @ql;
+    my @phyloScores = list zeroes $num_query_ancestors;
     $phyloScores[ $oldest_stratum ] = 1;
     $PhyloStratum_scores{$qry_seq} = \@phyloScores;
 }
