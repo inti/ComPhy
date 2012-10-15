@@ -18,7 +18,7 @@ use NCBI_PowerScripting;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $hard_threshold, $soft_threshold,$blastdbcmd,
-        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL );
+        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL,$score_type, $seqs );
 
 GetOptions(
     'help' => \$help,
@@ -38,6 +38,8 @@ GetOptions(
     'guess_qry_specie' => \$guess_qry_specie,
     'max_eutils_queries=i' => \$max_eutils_queries,
     'email' => \$EMAIL,
+    'score_type=i' => \$score_type,
+    'seq=s' => \$seqs,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -71,6 +73,39 @@ foreach my $file (@$blast_out){
     } elsif ($blast_format eq 'paralign'){
         my $parsed_blast_out = parse_paralign_table($file);
         @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
+        if (defined $soft_threshold){
+            if (defined $seqs) {
+                print_OUT("Reading input sequences from [ $seqs ].");
+                my %seq_size = (); # PARALIGN results do not provide output for sequences without hits neither the size of the quert sequence. the program will read the input sequences and store its ids and the size
+                my $in  = Bio::SeqIO->new(-file => $seqs, -format => 'fasta');
+                while ( my $qry_seq = $in->next_seq() ) {
+                    my $header = join "_",$qry_seq->id,$qry_seq->description();
+                    $header =~ s/ /_/g;
+                    $seq_size{ $header } = length $qry_seq->seq;
+                }
+                $in->close();
+                while (my ($qry_seq,$blast_subjects) = each %S){
+                    # loop over blast results for this query sequence
+                    if (not defined $seq_size{$qry_seq}){
+                        print_OUT("From PARALIGN search output I got this id [ $qry_seq ] which I could not find on the in put sequence file");
+                        next;
+                    }
+                    my $qry_size = $seq_size{$qry_seq};
+                    for (my $i = 0 ; $i < scalar @{$blast_subjects}; $i++){
+                        $S{$qry_seq}->[$i]->{'coverage'} /= $seq_size{$qry_seq};
+                        $S{$qry_seq}->[$i]->{'percent_identity'} /= $seq_size{$qry_seq};
+                    }
+                    delete($seq_size{$qry_seq});
+                }
+                foreach my $qry_id (keys %seq_size) {
+                    $S{$qry_id} = [] if (not defined $S{$qry_id});
+                }
+            } else {
+                print_OUT("PARALIGN search output does not provide query sequence lengths and I need this to use soft-scoring methods. Get the original sequences use on the search and provide them with the option -seq");
+                print_OUT("Bye");
+                exit(1);
+            }
+        }
     }
 }
 print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] query and target [ " . scalar (values %S) . " ] sequences.");

@@ -84,8 +84,8 @@ sub parse_paralign_table {
         $p_value = pdl 1 - $p_value;
         $p_value = pdl $e_value if ($p_value == 0);
         #### BOTH COVERAGE AND %IDENTITY ARE NOT WELL CALCULATED HERE. THIS NEEDS TO BE REVIEWED.
-        my $coverage = $data[ $fields{'alignment_length'}]/$data[ $fields{'subject_length'}];
-        my $percent_identity = 100*$data[ $fields{'n_identical_symbols'}]/$data[ $fields{'alignment_length'}];
+        my $coverage = $data[ $fields{'alignment_length'} ];
+        my $percent_identity = $data[ $fields{'n_identical_symbols'} ];
         $data[ $fields{'query_id'}] =~ s/ /_/g;
         my $frame = 0;
         push @{ $back{ $data[ $fields{'query_id'}] }  }, {  'subject_id' => $subject_id[1],
@@ -162,7 +162,7 @@ sub parse_blast_table {
                                                             'evalue' => $e_value,
                                                             'coverage' => $coverage,
                                                             'frames' => $frame,
-                                                            'percent_identity' => $data[ $fields{'percent_identity'}],
+                                                            'percent_identity' => $data[ $fields{'percent_identity'}]/100,
                                                           };
 
     }
