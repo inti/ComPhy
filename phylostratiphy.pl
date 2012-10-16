@@ -389,11 +389,6 @@ print_OUT("Done");
 
 exit;
 
-# TODO:
-# 3- implement soft-coded
-# 4- guess specie
-
-
 __END__
 
 =head1 NAME
