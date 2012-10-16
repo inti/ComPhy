@@ -9,7 +9,7 @@ use Data::Dumper;
 # local modules
 use PhyloStratiphytUtils;
 
-our (   $help, $man, $tax_folder, $db, $blastdbcmd, $user_provided_query_taxon_id, $tax_info );
+our (   $help, $man, $tax_folder, $db, $blastdbcmd, $user_provided_query_taxon_id, $tax_info,$out );
 
 GetOptions(
     'help' => \$help,
@@ -18,6 +18,7 @@ GetOptions(
     'db=s' => \$db,
     'query_taxon=s' => \$user_provided_query_taxon_id,
     'tax_info=s' => \$tax_info,
+    'out|o=s' => \$out,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -45,8 +46,21 @@ if (defined $db){
     my $tax_info = shift;
     print_OUT("Getting sequence ids from sequence db [ $db ]");
     my $ids = `fastacmd -D 2 -d $db`;
-    my @seq_ids = split($ids);
-    print_OUT("   '-> got " . scalar @seq_ids . " ] sequence ids.");
+    my @seq_ids = split(/\n/,$ids);
+    print_OUT("   '-> got [ " . scalar @seq_ids . " ] sequence ids.");
+    my $batch_size = 1000; 
+    for (my $i = 0; $i < scalar @seq_ids; $i += $batch_size) {
+	open(IDS,">tmp.$$.txt") or die $!;
+	print IDS join "\n", $seq_ids[ $i .. $i + $batch_size ]; 
+	close(IDS);
+	`$blastdbcmd -outfmt \"%a,%g,%T,%L,%S\" -entry_batch tmp.$$.txt -db $db -out tmp.$$.tax_info_file`;
+         unlink("tmp.$$.txt");
+
+print "check now\n";
+getc;
+    }
+
+
 
 #    print_OUT("Getting taxons ids for hit sequences from sequence db [ $seq_db ]");
 #    my $tmp_file = "tmp.seq_tax_ids.$$";
