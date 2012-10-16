@@ -482,7 +482,7 @@ if (defined $bootstrap){
     print_OUT("       ... done ...");
 
     # do bootstrap for hard scores
-    print_OUT("   '-> Calculating stats over bootstrap replicates");
+    print_OUT("   '-> Calculating stats over bootstrap replicates for hard scores");
     my $hardscores = mpdl values %HardPhyloScores;
     my $hardBootstrap = zeroes $num_query_ancestors, $bootstrap;
     
@@ -510,7 +510,7 @@ if (defined $bootstrap){
     
     # do bootstrap for soft scores
     if (defined $soft_threshold){
-        print_OUT("   '-> Calculating stats over bootstrap replicates");
+        print_OUT("   '-> Calculating stats over bootstrap replicates for soft scores");
         my $softscores = mpdl values %SoftPhyloScores;
         my $softBootstrap = zeroes $num_query_ancestors, $bootstrap;
         while (my ($b,$idx) = each %bootstrap_indexes){

@@ -221,7 +221,7 @@ sub blosum62_self_scoring {
                             'X' => 1);
     my $score = 0;
     foreach my $aa (split('',$seq)){
-        $score += $blosum62_diagonal{uc($aa)};
+        $score += $blosum62_diagonal{uc($aa)} if (exists $blosum62_diagonal{uc($aa)});
     }
     my $lambda =  0.252;
     my $K = 0.035;
