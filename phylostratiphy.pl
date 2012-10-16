@@ -18,7 +18,7 @@ use NCBI_PowerScripting;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $hard_threshold, $soft_threshold,$blastdbcmd,
-        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL,$score_type, $seqs );
+        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL,$score_type, $seqs, $bootstrap );
 
 GetOptions(
     'help' => \$help,
@@ -40,6 +40,7 @@ GetOptions(
     'email' => \$EMAIL,
     'score_type=i' => \$score_type,
     'seq=s' => \$seqs,
+    'bootstrap|b=i' => \$bootstrap,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -435,7 +436,6 @@ close(OUT);
 # All soft-scores are normalised on [0,1] scale to solve the problem the the alignment scores is not normalised.
 if (defined $soft_threshold){
     print_OUT("Printing soft-threshold gene scores scores to [ $out.soft_score.txt ].");
-    my $stratumScores = zeroes $num_query_ancestors;
     open (SOFT,">$out.soft_score.txt") or die $!;
     print  SOFT "ID\t",join "\t", @ql;
     print  SOFT "\n";
@@ -454,20 +454,82 @@ if (defined $soft_threshold){
         my $nelem = $scores->nelem;
         $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
         $scores /= $scores->sum;
-        $stratumScores += $scores;
         print  SOFT "$qry_id\t", join "\t",list $scores;
         print SOFT "\n";
-        $SoftPhyloScores{ $qry_id } = [list $scores];
+        $SoftPhyloScores{ $qry_id } = $scores;
     }
     close(SOFT);
 
     print_OUT("Printing PhyloStratum level scores to [ $out.soft_score.summary.txt ].");
-    open(OUT,">$out.soft_scores.summary.txt") or die $!;
+    open(OUT,">$out.soft_score.summary.txt") or die $!;
     print OUT join "\t", @ql;
     print OUT "\n";
-    print OUT join "\t", list $stratumScores;
+    print OUT join "\t", list sumover mpdl values %SoftPhyloScores;
     print OUT "\n";
     close(OUT);
+}
+
+if (defined $bootstrap){
+    print_OUT("Calculating bootstrap confidence intervals");
+    my $N_hard = scalar keys %HardPhyloScores;
+    # store the indexes of the score matrices that constitute each of the bootstrap replicates
+    print_OUT("   '-> Sampling random sets of genes");
+    my %bootstrap_indexes = ();
+    for (my $b = 0 ; $b < $bootstrap; $b++){
+        $bootstrap_indexes{$b} = pdl get_index_sample($N_hard,$N_hard,1);
+    }
+    print_OUT("   ... done ...");
+
+    # do bootstrap for hard scores
+    print_OUT("   '-> Calculating stats over bootstrap replicates");
+    my $hardscores = mpdl values %HardPhyloScores;
+    my $hardBootstrap = zeroes $num_query_ancestors, $bootstrap;
+    
+    while (my ($b,$idx) = each %bootstrap_indexes){
+        $hardBootstrap(,$b) .= $hardscores($idx,)->sumover->flat;
+    }
+    print_OUT("   ... done ...");
+
+    my @percentiles = (0.025,0.16,0.25,0.5,0.75,0.84,0.975);
+    
+    print_OUT("   '-> Printing bootstrap values for hard coded scores to [ $out.hard_score.bootstrap.txt ]");
+    open(OUT,">$out.hard_score.bootstrap.txt") or die $!;
+    print OUT "RANK\tPhyloStratum\t", join "\tq", ("SUM",@percentiles);
+    print OUT "\n";
+    for (my $rank = 0; $rank <$num_query_ancestors; $rank++){
+        print OUT "$rank\t$ql[$rank]\t",$hardscores(,$rank)->flat->sum;
+        foreach my $p (@percentiles){
+            print OUT "\t",quantile($hardBootstrap($rank,)->flat,$p,7);
+        }
+        print OUT "\n";
+    }
+    close(OUT);
+    print_OUT("   ... done ...");
+
+    
+    # do bootstrap for soft scores
+    if (defined $soft_threshold){
+        print_OUT("   '-> Calculating stats over bootstrap replicates");
+        my $softscores = mpdl values %SoftPhyloScores;
+        my $softBootstrap = zeroes $num_query_ancestors, $bootstrap;
+        while (my ($b,$idx) = each %bootstrap_indexes){
+            $softBootstrap(,$b) .= $softscores($idx,)->sumover->flat;
+        }
+        print_OUT("   ... done ...");
+        print_OUT("   '-> Printing bootstrap values for soft coded scores to [ $out.soft_score.bootstrap.txt ]");
+        open(OUT,">$out.soft_score.bootstrap.txt") or die $!;
+        print OUT "RANK\tPhyloStratum\t", join "\tq", ("SUM",@percentiles);
+        print OUT "\n";
+        for (my $rank = 0; $rank < $num_query_ancestors; $rank++){
+            print OUT "$rank\t$ql[$rank]\t",$softscores(,$rank)->flat->sum;
+            foreach my $p (@percentiles){
+                print OUT "\t",quantile($softBootstrap($rank,)->flat,$p,7);
+            }
+            print OUT "\n";
+        }
+        close(OUT);
+        print_OUT("   ... done ...");
+    }
 }
 
 
@@ -517,6 +579,7 @@ B<This program> will perform a PhyloStratigraphy analysis. It provides a impleme
     -no_ncbi_entrez     Do not use NCBI Entrez API to get information on sequence ids without data on local DBs.
     -ncbi_entrez_batch_size Number of IDs to submit to the NCBI API at time. DO NOT SET IT TO MORE THAN 500 (defualt 500).
     -guess_qry_specie   use blast result to guess query species.
+    -bootstrap, -b      Calculate boostrap confidence intervals for phylostratum scores.
 
 
  
@@ -580,6 +643,10 @@ Print complete documentation
 =item B<-guess_qry_specie>
  
  Use blast result to guess query species. This done by selecting the most common specie with 100% identify blast hits. This (may) will only work if the specie of interest is actually on the DB use for the blast searches.
+
+=item B<-bootstrap, -b>
+ 
+ Calculate boostrap confidence intervals for phylostratum scores. This will work for both hard and soft scores. It will produce two new files called *.hard_score.bootstrap.txt or *.soft_score.bootstrap.txt with 0.025, 0.16, 0.25, 0.5, 0.75, 0.84 and 0.975 confidence intervals.
 
 =back
  
@@ -646,7 +713,21 @@ The original methodology relies on assigning 0 or 1 scores to phylostratum depen
     -soft
  
 A output file called *.soft_score.txt will have the soft-threshold scores. The normal output with 0/1 entries will still be produced.
+
+=item B<5. Calculate scores' confidence intervals>
  
+To calculate bootstrap confidence intervals you can use a command like:
+ 
+>perl phylostratiphy.pl  \
+     -tax_folder ncbi_tax_data/ \
+     -query_taxon 9606 \
+     -out test_phylostratiphy \
+     -blast_format table \
+     - blast example/dysbindin.blast_out.txt \
+     -email youremail@something.com
+     -soft -b 100
+ 
+Which will run 100 bootstrap sampling and will produce two additional output files called *.hard_score.bootstrap.txt or *.soft_score.bootstrap.txt.
  
 =back
 
