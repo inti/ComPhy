@@ -579,6 +579,7 @@ B<This program> will perform a PhyloStratigraphy analysis. It provides a impleme
     -no_ncbi_entrez     Do not use NCBI Entrez API to get information on sequence ids without data on local DBs.
     -ncbi_entrez_batch_size Number of IDs to submit to the NCBI API at time. DO NOT SET IT TO MORE THAN 500 (defualt 500).
     -guess_qry_specie   use blast result to guess query species.
+    -bootstrap, -b      Calculate boostrap confidence intervals for phylostratum scores.
 
 
  
@@ -642,6 +643,10 @@ Print complete documentation
 =item B<-guess_qry_specie>
  
  Use blast result to guess query species. This done by selecting the most common specie with 100% identify blast hits. This (may) will only work if the specie of interest is actually on the DB use for the blast searches.
+
+=item B<-bootstrap, -b>
+ 
+ Calculate boostrap confidence intervals for phylostratum scores. This will work for both hard and soft scores. It will produce two new files called *.hard_score.bootstrap.txt or *.soft_score.bootstrap.txt with 0.025, 0.16, 0.25, 0.5, 0.75, 0.84 and 0.975 confidence intervals.
 
 =back
  
@@ -708,7 +713,21 @@ The original methodology relies on assigning 0 or 1 scores to phylostratum depen
     -soft
  
 A output file called *.soft_score.txt will have the soft-threshold scores. The normal output with 0/1 entries will still be produced.
+
+=item B<5. Calculate scores' confidence intervals>
  
+To calculate bootstrap confidence intervals you can use a command like:
+ 
+>perl phylostratiphy.pl  \
+     -tax_folder ncbi_tax_data/ \
+     -query_taxon 9606 \
+     -out test_phylostratiphy \
+     -blast_format table \
+     - blast example/dysbindin.blast_out.txt \
+     -email youremail@something.com
+     -soft -b 100
+ 
+Which will run 100 bootstrap sampling and will produce two additional output files called *.hard_score.bootstrap.txt or *.soft_score.bootstrap.txt.
  
 =back
 
