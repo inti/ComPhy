@@ -23,7 +23,7 @@ our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_quer
 GetOptions(
     'help' => \$help,
     'man' => \$man,
-    'blast=s@' => \$blast_out,
+    'blast=s@{,}' => \$blast_out,
     'tax_folder=s' => \$tax_folder,
     'blast_format=s' => \$blast_format,
     'use_coverage' => \$use_coverage,
@@ -69,8 +69,9 @@ print_OUT("Starting to parse blast output");
 my %S = (); # hash will store to score for each species.
 # loop over blast results.
 
+print_OUT("Working on [ " . scalar @{$blast_out} . " ] sequence search input files");
 foreach my $file (@{$blast_out}){
-    #print_OUT("   '-> [ $file ]");
+    print_OUT("   '-> [ $file ]");
     if ($blast_format eq 'table'){
         my $parsed_blast_out = parse_blast_table($file);
         @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
