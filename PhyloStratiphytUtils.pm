@@ -20,8 +20,30 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw(blosum62_self_scoring calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw(blosum62_self_scoring calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw(get_index_sample blosum62_self_scoring calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
+@EXPORT_OK = qw(get_index_sample blosum62_self_scoring calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+
+sub get_index_sample {
+    my $N = shift;
+    my $max_index = shift;
+    my $with_replacement = shift;
+    defined $with_replacement or $with_replacement = 0;
+    my @back = ();
+    if ($with_replacement == 1){
+        for (my $i = 0; $i < $N - 1; $i++){
+            push @back, int(rand($max_index + 1));
+        }
+    }else {
+        my @idx = 0 .. $max_index - 1;
+        my %idx = ();
+        while (scalar (keys %idx) < $N){
+            my $int = int(rand($max_index + 1));
+            $idx{$int} = '';
+        }
+        @back = keys %idx;
+    }
+    return(\@back);
+}
 
 sub blosum62_self_scoring {
     my $seq = shift;
