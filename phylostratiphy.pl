@@ -371,8 +371,8 @@ PRINTUNMATCHED:
 my %qry_ancestors_ranks = ();
 my $c = 0;
 map { $qry_ancestors_ranks{$_} = $c++;   } @ql;
-my %PhyloStratum_scores = ();
 my %SoftPhyloScores = ();
+my %HardPhyloScores = ();
 my $num_query_ancestors = scalar @ql;
 foreach my $qry_seq (keys %S) {
     my $oldest_stratum = $num_query_ancestors - 1;
@@ -400,7 +400,7 @@ foreach my $qry_seq (keys %S) {
     }
     my @phyloScores = list zeroes $num_query_ancestors;
     $phyloScores[ $oldest_stratum ] = 1;
-    $PhyloStratum_scores{$qry_seq} = \@phyloScores;
+    $HardPhyloScores{$qry_seq} = \@phyloScores;
 }
 print_OUT("Finished calculating hard coded scores");
 print_OUT("Printing summary scores to [ $out.hard_score.summary.txt ].");
@@ -409,7 +409,7 @@ print_OUT("Printing summary scores to [ $out.hard_score.summary.txt ].");
 open(OUT,">$out.hard_score.summary.txt") or die $!;
 print OUT join "\t", @ql;
 print OUT "\n";
-print OUT join "\t", list sumover mpdl values %PhyloStratum_scores;
+print OUT join "\t", list sumover mpdl values %HardPhyloScores;
 print OUT "\n";
 close(OUT);
 
@@ -419,7 +419,7 @@ print_OUT("Printing gene phylostratum scores to [ $out.hard_score.txt ].");
 my $phyloScoresTable = join "\t", ("ID",@ql);
 $phyloScoresTable .= "\n";
 
-while (my ($qry_id,$qry_scores) = each %PhyloStratum_scores) {
+while (my ($qry_id,$qry_scores) = each %HardPhyloScores) {
     $phyloScoresTable .= join "\t", ($qry_id,@$qry_scores);
     $phyloScoresTable .= "\n";
 }
@@ -457,6 +457,7 @@ if (defined $soft_threshold){
         $stratumScores += $scores;
         print  SOFT "$qry_id\t", join "\t",list $scores;
         print SOFT "\n";
+        $SoftPhyloScores{ $qry_id } = [list $scores];
     }
     close(SOFT);
 
@@ -468,6 +469,7 @@ if (defined $soft_threshold){
     print OUT "\n";
     close(OUT);
 }
+
 
 print_OUT("Done");
 
