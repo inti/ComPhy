@@ -403,17 +403,17 @@ foreach my $qry_seq (keys %S) {
     $PhyloStratum_scores{$qry_seq} = \@phyloScores;
 }
 print_OUT("Finished calculating hard coded scores");
-print_OUT("Printing summary scores to [ $out.qry_node_phylostratumscores.txt ].");
+print_OUT("Printing summary scores to [ $out.hard_score.summary.txt ].");
 
 # Print out the PhyloStratumScores as hardcoded
-open(OUT,">$out.qry_node_phylostratumscores.txt") or die $!;
+open(OUT,">$out.hard_score.summary.txt") or die $!;
 print OUT join "\t", @ql;
 print OUT "\n";
 print OUT join "\t", list sumover mpdl values %PhyloStratum_scores;
 print OUT "\n";
 close(OUT);
 
-print_OUT("Printing gene phylostratum scores to [ $out.txt ].");
+print_OUT("Printing gene phylostratum scores to [ $out.hard_score.txt ].");
 
 # Make table with scores for each gene
 my $phyloScoresTable = join "\t", ("ID",@ql);
@@ -427,34 +427,47 @@ open(OUT,">$out.hard_score.txt") or die $!;
 print OUT $phyloScoresTable;
 close(OUT);
 
-open (SOFT,">$out.soft_score.txt") or die $!;
+
 # ##### PRINT SOFT-SCORES ########
 # soft scores are defined as: coverage*(1 - pvalue)*score.
 # This conveys information on how much of the query sequence in being capture (coverage),
 # how well it is being capture (score) and how likely is this alignment not to be by chance (1 - pvalue).
 # All soft-scores are normalised on [0,1] scale to solve the problem the the alignment scores is not normalised.
-print  SOFT "ID\t",join "\t", @ql;
-print  SOFT "\n";
-while (my ($qry_id,$qry_scores) = each %SoftPhyloScores) {
-    my $last = 1;
-    my $scores;
-    foreach my $stratum (@ql){
-        if (exists $SoftPhyloScores{ $qry_id }->{ $stratum }){
-            if ($SoftPhyloScores{ $qry_id }->{ $stratum } > $last){
-                $last = $SoftPhyloScores{ $qry_id }->{ $stratum };
+if (defined $soft_threshold){
+    print_OUT("Printing soft-threshold gene scores scores to [ $out.soft_score.txt ].");
+    my $stratumScores = zeroes $num_query_ancestors;
+    open (SOFT,">$out.soft_score.txt") or die $!;
+    print  SOFT "ID\t",join "\t", @ql;
+    print  SOFT "\n";
+    while (my ($qry_id,$qry_scores) = each %SoftPhyloScores) {
+        my $last = 1;
+        my $scores;
+        foreach my $stratum (@ql){
+            if (exists $SoftPhyloScores{ $qry_id }->{ $stratum }){
+                if ($SoftPhyloScores{ $qry_id }->{ $stratum } > $last){
+                    $last = $SoftPhyloScores{ $qry_id }->{ $stratum };
+                }
             }
+            push @{ $scores }, $last;
         }
-        push @{ $scores }, $last;
+        $scores = flat pdl $scores;
+        my $nelem = $scores->nelem;
+        $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
+        $scores /= $scores->sum;
+        $stratumScores += $scores;
+        print  SOFT "$qry_id\t", join "\t",list $scores;
+        print SOFT "\n";
     }
-    $scores = flat pdl $scores;
-    my $nelem = $scores->nelem;
-    $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
-    $scores /= $scores->sum;
-    print  SOFT "$qry_id\t", join "\t",list $scores;
-    print SOFT "\n";
-}
+    close(SOFT);
 
-close(SOFT);
+    print_OUT("Printing PhyloStratum level scores to [ $out.soft_score.summary.txt ].");
+    open(OUT,">$out.soft_scores.summary.txt") or die $!;
+    print OUT join "\t", @ql;
+    print OUT "\n";
+    print OUT join "\t", list $stratumScores;
+    print OUT "\n";
+    close(OUT);
+}
 
 print_OUT("Done");
 
