@@ -333,7 +333,7 @@ sub parse_blast_table {
                 $qry_id = $fs[0];
             }
             if ($line =~ m/^# 0 hits found/){
-                @{ $back{ $qry_id } } = [];
+                $back{ $qry_id } = [];
             }
             if ($line =~ m/^# Fields:/){
                 # clean up a bit the line
