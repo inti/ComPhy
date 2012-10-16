@@ -376,7 +376,7 @@ my %SoftPhyloScores = ();
 my $num_query_ancestors = scalar @ql;
 foreach my $qry_seq (keys %S) {
     my $oldest_stratum = $num_query_ancestors - 1;
-    $SoftPhyloScores{ $qry_seq }->{ $ql[-1] } =  blosum62_self_scoring($seq_size{$qry_seq});
+    $SoftPhyloScores{ $qry_seq }->{ $ql[-1] } =  blosum62_self_scoring($seq_size{$qry_seq}) if (defined $seqs);
     foreach my $target_seq ( @{ $S{ $qry_seq } } ){
         next if (not exists $gi_taxData{ $target_seq->{'subject_id'}}); # this ids have been printed to a file already.
         my $lca = $gi_taxData{ $target_seq->{'subject_id'} }->{'lca_with_qry'};
