@@ -436,7 +436,6 @@ close(OUT);
 # All soft-scores are normalised on [0,1] scale to solve the problem the the alignment scores is not normalised.
 if (defined $soft_threshold){
     print_OUT("Printing soft-threshold gene scores scores to [ $out.soft_score.txt ].");
-    my $stratumScores = zeroes $num_query_ancestors;
     open (SOFT,">$out.soft_score.txt") or die $!;
     print  SOFT "ID\t",join "\t", @ql;
     print  SOFT "\n";
@@ -455,20 +454,82 @@ if (defined $soft_threshold){
         my $nelem = $scores->nelem;
         $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
         $scores /= $scores->sum;
-        $stratumScores += $scores;
         print  SOFT "$qry_id\t", join "\t",list $scores;
         print SOFT "\n";
-        $SoftPhyloScores{ $qry_id } = [list $scores];
+        $SoftPhyloScores{ $qry_id } = $scores;
     }
     close(SOFT);
 
     print_OUT("Printing PhyloStratum level scores to [ $out.soft_score.summary.txt ].");
-    open(OUT,">$out.soft_scores.summary.txt") or die $!;
+    open(OUT,">$out.soft_score.summary.txt") or die $!;
     print OUT join "\t", @ql;
     print OUT "\n";
-    print OUT join "\t", list $stratumScores;
+    print OUT join "\t", list sumover mpdl values %SoftPhyloScores;
     print OUT "\n";
     close(OUT);
+}
+
+if (defined $bootstrap){
+    print_OUT("Calculating bootstrap confidence intervals");
+    my $N_hard = scalar keys %HardPhyloScores;
+    # store the indexes of the score matrices that constitute each of the bootstrap replicates
+    print_OUT("   '-> Sampling random sets of genes");
+    my %bootstrap_indexes = ();
+    for (my $b = 0 ; $b < $bootstrap; $b++){
+        $bootstrap_indexes{$b} = pdl get_index_sample($N_hard,$N_hard,1);
+    }
+    print_OUT("   ... done ...");
+
+    # do bootstrap for hard scores
+    print_OUT("   '-> Calculating stats over bootstrap replicates");
+    my $hardscores = mpdl values %HardPhyloScores;
+    my $hardBootstrap = zeroes $num_query_ancestors, $bootstrap;
+    
+    while (my ($b,$idx) = each %bootstrap_indexes){
+        $hardBootstrap(,$b) .= $hardscores($idx,)->sumover->flat;
+    }
+    print_OUT("   ... done ...");
+
+    my @percentiles = (0.025,0.16,0.25,0.5,0.75,0.84,0.975);
+    
+    print_OUT("   '-> Printing bootstrap values for hard coded scores to [ $out.hard_score.bootstrap.txt ]");
+    open(OUT,">$out.hard_score.bootstrap.txt") or die $!;
+    print OUT "RANK\tPhyloStratum\t", join "\tq", ("SUM",@percentiles);
+    print OUT "\n";
+    for (my $rank = 0; $rank <$num_query_ancestors; $rank++){
+        print OUT "$rank\t$ql[$rank]\t",$hardscores(,$rank)->flat->sum;
+        foreach my $p (@percentiles){
+            print OUT "\t",quantile($hardBootstrap($rank,)->flat,$p,7);
+        }
+        print OUT "\n";
+    }
+    close(OUT);
+    print_OUT("   ... done ...");
+
+    
+    # do bootstrap for soft scores
+    if (defined $soft_threshold){
+        print_OUT("   '-> Calculating stats over bootstrap replicates");
+        my $softscores = mpdl values %SoftPhyloScores;
+        my $softBootstrap = zeroes $num_query_ancestors, $bootstrap;
+        while (my ($b,$idx) = each %bootstrap_indexes){
+            $softBootstrap(,$b) .= $softscores($idx,)->sumover->flat;
+        }
+        print_OUT("   ... done ...");
+        print_OUT("   '-> Printing bootstrap values for soft coded scores to [ $out.soft_score.bootstrap.txt ]");
+        open(OUT,">$out.soft_score.bootstrap.txt") or die $!;
+        print OUT "RANK\tPhyloStratum\t", join "\tq", ("SUM",@percentiles);
+        print OUT "\n";
+        for (my $rank = 0; $rank < $num_query_ancestors; $rank++){
+            print OUT "$rank\t$ql[$rank]\t",$softscores(,$rank)->flat->sum;
+            foreach my $p (@percentiles){
+                print OUT "\t",quantile($softBootstrap($rank,)->flat,$p,7);
+            }
+            print OUT "\n";
+        }
+        close(OUT);
+        print_OUT("   ... done ...");
+    }
 }
 
 
