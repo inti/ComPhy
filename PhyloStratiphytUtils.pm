@@ -321,9 +321,9 @@ sub parse_blast_table {
     open (FILE,$file) or die $!;
     my %fields = ();
     my $qry_id = "";
-    my @lines = <FILE>;
-    while (my $line = shift @lines){
-    #while (my $line = <FILE>){
+#    my @lines = <FILE>;
+#    foreach my $line (@lines){
+    while (my $line = <FILE>){
         # get the query id in case that there are not blast hits
         # if line has the header of the table. split the header and keep the columns names.
         if ($line =~ m/^#/){
