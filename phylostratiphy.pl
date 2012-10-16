@@ -18,7 +18,7 @@ use NCBI_PowerScripting;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $hard_threshold, $soft_threshold,$blastdbcmd,
-        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL,$score_type, $seqs );
+        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL,$score_type, $seqs, $bootstrap );
 
 GetOptions(
     'help' => \$help,
@@ -40,6 +40,7 @@ GetOptions(
     'email' => \$EMAIL,
     'score_type=i' => \$score_type,
     'seq=s' => \$seqs,
+    'bootstrap|b=i' => \$bootstrap,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
