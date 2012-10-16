@@ -69,7 +69,7 @@ print_OUT("Starting to parse blast output");
 my %S = (); # hash will store to score for each species.
 # loop over blast results.
 
-foreach my $file (@$blast_out){
+foreach my $file (@{$blast_out}){
     #print_OUT("   '-> [ $file ]");
     if ($blast_format eq 'table'){
         my $parsed_blast_out = parse_blast_table($file);
@@ -80,7 +80,7 @@ foreach my $file (@$blast_out){
     }
 }
 
-print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] query and target [ " . scalar (values %S) . " ] sequences.");
+print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] query and target [ " . scalar (map { @{$_}; } (values %S)) . " ] sequences.");
 
 my %self_score = (); # store the self score. to be use when sequence do not have a perfect match on the db.
 my %seq_size = (); # PARALIGN results do not provide output for sequences without hits neither the size of the quert sequence. the program will read the input sequences and store its ids and the size
@@ -469,6 +469,7 @@ if (defined $soft_threshold){
     close(OUT);
 }
 
+###### WORK ON BOOSTRAP VALUES ###########
 if (defined $bootstrap){
     print_OUT("Calculating bootstrap confidence intervals");
     my $N_hard = scalar keys %HardPhyloScores;
@@ -478,7 +479,7 @@ if (defined $bootstrap){
     for (my $b = 0 ; $b < $bootstrap; $b++){
         $bootstrap_indexes{$b} = pdl get_index_sample($N_hard,$N_hard,1);
     }
-    print_OUT("   ... done ...");
+    print_OUT("       ... done ...");
 
     # do bootstrap for hard scores
     print_OUT("   '-> Calculating stats over bootstrap replicates");
@@ -488,7 +489,7 @@ if (defined $bootstrap){
     while (my ($b,$idx) = each %bootstrap_indexes){
         $hardBootstrap(,$b) .= $hardscores($idx,)->sumover->flat;
     }
-    print_OUT("   ... done ...");
+    print_OUT("       ... done ...");
 
     my @percentiles = (0.025,0.16,0.25,0.5,0.75,0.84,0.975);
     
@@ -504,7 +505,7 @@ if (defined $bootstrap){
         print OUT "\n";
     }
     close(OUT);
-    print_OUT("   ... done ...");
+    print_OUT("       ... done ...");
 
     
     # do bootstrap for soft scores
@@ -515,7 +516,7 @@ if (defined $bootstrap){
         while (my ($b,$idx) = each %bootstrap_indexes){
             $softBootstrap(,$b) .= $softscores($idx,)->sumover->flat;
         }
-        print_OUT("   ... done ...");
+        print_OUT("       ... done ...");
         print_OUT("   '-> Printing bootstrap values for soft coded scores to [ $out.soft_score.bootstrap.txt ]");
         open(OUT,">$out.soft_score.bootstrap.txt") or die $!;
         print OUT "RANK\tPhyloStratum\t", join "\tq", ("SUM",@percentiles);
@@ -528,7 +529,7 @@ if (defined $bootstrap){
             print OUT "\n";
         }
         close(OUT);
-        print_OUT("   ... done ...");
+        print_OUT("       ... done ...");
     }
 }
 
