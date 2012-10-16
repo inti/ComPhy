@@ -53,7 +53,8 @@ defined $blastdbcmd or $blastdbcmd = `which blastdbcmd`;
 chomp($blastdbcmd);
 defined $seq_db or $seq_db = "nr"; # assuming proteins and that path to dbs is on a enviromental variable
 defined $hard_threshold or $hard_threshold = 1e-3;
-defined $soft_threshold and $hard_threshold = undef;
+print_OUT("Defined sequence search e-value threshold of [ $hard_threshold ].");
+#defined $soft_threshold and $hard_threshold = undef;
 defined $blast_format or $blast_format = 'table';
 defined $ncbi_entrez_batch_size or $ncbi_entrez_batch_size = 500;
 $ncbi_entrez_batch_size = 500 if ($ncbi_entrez_batch_size > 500);
