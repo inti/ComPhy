@@ -18,12 +18,12 @@ use NCBI_PowerScripting;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $hard_threshold, $soft_threshold,$blastdbcmd,
-        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL );
+        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL,$score_type, $seqs, $bootstrap, $return_raw_score );
 
 GetOptions(
     'help' => \$help,
     'man' => \$man,
-    'blast=s@' => \$blast_out,
+    'blast=s@{,}' => \$blast_out,
     'tax_folder=s' => \$tax_folder,
     'blast_format=s' => \$blast_format,
     'use_coverage' => \$use_coverage,
@@ -35,9 +35,13 @@ GetOptions(
     'seq_db|db=s' => \$seq_db,
     'no_ncbi_entrez' => \$not_use_ncbi_entrez,
     'ncbi_entrez_batch_size=i' => \$ncbi_entrez_batch_size,
-    'guess_qry_specie' => \$guess_qry_specie,
+    'guess_query_taxon|guess' => \$guess_qry_specie,
     'max_eutils_queries=i' => \$max_eutils_queries,
     'email' => \$EMAIL,
+    'score_type=i' => \$score_type,
+    'raw_score' => \$return_raw_score,
+    'seq=s' => \$seqs,
+    'bootstrap|b=i' => \$bootstrap,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -50,21 +54,26 @@ defined $blastdbcmd or $blastdbcmd = `which blastdbcmd`;
 chomp($blastdbcmd);
 defined $seq_db or $seq_db = "nr"; # assuming proteins and that path to dbs is on a enviromental variable
 defined $hard_threshold or $hard_threshold = 1e-3;
-defined $soft_threshold and $hard_threshold = undef;
+print_OUT("Defined sequence search e-value threshold of [ $hard_threshold ].");
+#defined $soft_threshold and $hard_threshold = undef;
 defined $blast_format or $blast_format = 'table';
 defined $ncbi_entrez_batch_size or $ncbi_entrez_batch_size = 500;
 $ncbi_entrez_batch_size = 500 if ($ncbi_entrez_batch_size > 500);
 defined $max_eutils_queries or $max_eutils_queries = 0;
+defined $score_type or $score_type = 1;
 
+not defined $seqs and print_OUT("WARNING: You did not provide a file with the original sequences in fasta format. This is needed if your specie of interest is not on the database");
 
 print_OUT("Starting to parse blast output");
 
 ### define some variables to start storing the results
+
 my %S = (); # hash will store to score for each species.
 # loop over blast results.
-# for each hit we will store the log(p-value) of the blast hit for each taxon of the tartget sequence.
-foreach my $file (@$blast_out){
-    #print_OUT("   '-> [ $file ]");
+
+print_OUT("Working on [ " . scalar @{$blast_out} . " ] sequence search input files");
+foreach my $file (@{$blast_out}){
+    print_OUT("   '-> [ $file ]");
     if ($blast_format eq 'table'){
         my $parsed_blast_out = parse_blast_table($file);
         @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
@@ -73,7 +82,44 @@ foreach my $file (@$blast_out){
         @S{keys %{$parsed_blast_out}} = values %{$parsed_blast_out};
     }
 }
-print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] query and target [ " . scalar (values %S) . " ] sequences.");
+
+print_OUT("Finished processing blast output with results for [ " . scalar (keys %S) . " ] query and target [ " . scalar (map { @{$_}; } (values %S)) . " ] sequences.");
+
+my %self_score = (); # store the self score. to be use when sequence do not have a perfect match on the db.
+my %seq_size = (); # PARALIGN results do not provide output for sequences without hits neither the size of the quert sequence. the program will read the input sequences and store its ids and the size
+if (defined $seqs) {
+    print_OUT("Reading input sequences from [ $seqs ].");
+    my $in  = Bio::SeqIO->new(-file => $seqs, -format => 'fasta');
+    while ( my $qry_seq = $in->next_seq() ) {
+        my $header = join "_",$qry_seq->id,$qry_seq->description();
+        $header =~ s/ /_/g;
+        $seq_size{ $header } = $qry_seq->seq;
+    }
+    $in->close();
+    while (my ($qry_seq,$blast_subjects) = each %S){
+        # loop over blast results for this query sequence
+        if (not defined $seq_size{$qry_seq}){
+            print_OUT("From sequence search output I got this id [ $qry_seq ] which I could not find on the in put sequence file");
+            next;
+        }
+        my $qry_size = length $seq_size{$qry_seq};
+        for (my $i = 0 ; $i < scalar @{$blast_subjects}; $i++){
+            $S{$qry_seq}->[$i]->{'coverage'} /= $qry_size;
+            $S{$qry_seq}->[$i]->{'percent_identity'} /= $qry_size;
+        }
+    }
+}
+if (defined $soft_threshold){
+    if (defined $seqs) {
+        foreach my $qry_id (keys %seq_size) {
+            $S{$qry_id} = [] if (not defined $S{$qry_id});
+        }        
+        print_OUT("After adding sequences on [ $seqs ] not present on sequence search output we have [ " . scalar (keys %S) . " ] query sequences");
+
+    } else {
+        print_OUT("WARNING: Soft-threshold needs the query sequence lengths. Get the original sequences use on the search and provide them with the option -seq");
+    }
+}
 
 #### LOAD TAXONOMY DB
 print_OUT("Reading taxonomy information");
@@ -100,9 +146,6 @@ if (defined $guess_qry_specie){
         # loop over blast results for this query sequence
         my $target_counter = -1; # set to -1 so that first item sets it to 0.
         foreach my $target_seqs (@{$blast_subjects}){
-            if (ref($target_seqs) eq 'ARRAY'){
-                next if (scalar @{$target_seqs} == 0);
-            }
             next if ($target_seqs->{'evalue'} > $hard_threshold);
             my $sbjct_taxid = $taxNCBI->get_taxid( $target_seqs->{'subject_id'} );
             if ($sbjct_taxid == 0){
@@ -131,11 +174,9 @@ my @ql = $taxNCBI->get_taxonomy( $user_provided_query_taxon_id);
 while (my ($qry_seq,$blast_subjects) = each %S){
     # loop over blast results for this query sequence
     my $target_counter = -1; # set to -1 so that first item sets it to 0.
+    next if (scalar @{$blast_subjects} == 0); # skip if this query did not have blast hits.
     foreach my $target_seqs (@{$blast_subjects}){
         $target_counter++;
-        if (ref($target_seqs) eq 'ARRAY'){
-            next if (scalar @{$target_seqs} == 0); # skip if this query did not have blast hits.
-        }
         ## Filter blast results.
         # if using hard threshold then remove hits by e-value
         if (defined $hard_threshold){
@@ -273,8 +314,8 @@ if (defined $not_use_ncbi_entrez){
             my %matched_ids = ();
             my $seqio = Bio::SeqIO->new( -file => $params{outfile}, -format => 'genbank' );
             while( my $seq = $seqio->next_seq ) {
-		my $acc  = $seq->accession();
-		next if (not exists $accs_to_gi{ $acc }->{'gi'});
+            my $acc  = $seq->accession();
+            next if (not exists $accs_to_gi{ $acc }->{'gi'});
                 my %features = ();
                 for my $feat_object ($seq->get_SeqFeatures) {
                     if ($feat_object->has_tag("db_xref")){
@@ -334,56 +375,182 @@ PRINTUNMATCHED:
 my %qry_ancestors_ranks = ();
 my $c = 0;
 map { $qry_ancestors_ranks{$_} = $c++;   } @ql;
-my %PhyloStratum_scores = ();
+my %SoftPhyloScores = ();
+my %HardPhyloScores = ();
+my $num_query_ancestors = scalar @ql;
 foreach my $qry_seq (keys %S) {
-    my $oldest_stratum = scalar @ql - 1;
+    my $oldest_stratum = $num_query_ancestors - 1;
+    $SoftPhyloScores{ $qry_seq }->{ $ql[ $oldest_stratum ] } =  blosum62_self_scoring($seq_size{$qry_seq}) if (defined $seqs);
+    if (not defined $seqs and scalar @{ $S{ $qry_seq } } == 0){ # this will make sure that this sequence is score
+        $SoftPhyloScores{ $qry_seq }->{ $ql[ -1 ] } = pdl 1;
+    }
     foreach my $target_seq ( @{ $S{ $qry_seq } } ){
-        #print Dumper($target_seq);
-        #        getc;
-        if (ref($target_seq) eq 'ARRAY'){
-            if (scalar @{$target_seq} == 0){
-                goto(WITHOUT_HITS);
-            }
-        }
-        next if ($target_seq->{'pass_hard_thresold'} == 0);
         next if (not exists $gi_taxData{ $target_seq->{'subject_id'}}); # this ids have been printed to a file already.
-            
         my $lca = $gi_taxData{ $target_seq->{'subject_id'} }->{'lca_with_qry'};
         next if ($lca eq "diff_root");
+        
+        if (defined $soft_threshold){ # work on soft-scores
+            my $soft_score = calculate_soft_score($target_seq,$score_type);
+            if (exists $SoftPhyloScores{ $qry_seq }->{ $lca }){
+                if ($SoftPhyloScores{ $qry_seq }->{ $lca } < $soft_score ){
+                    $SoftPhyloScores{ $qry_seq }->{ $lca } = $soft_score;
+                }
+            } else {
+                $SoftPhyloScores{ $qry_seq }->{ $lca } = $soft_score;
+            }
+        }
+        next if (defined $hard_threshold and $target_seq->{'pass_hard_thresold'} == 0);
         my $target_seq_stratum = $qry_ancestors_ranks{ $lca };
         if ($target_seq_stratum < $oldest_stratum) {
             $oldest_stratum = $target_seq_stratum ;
         }
     }
-WITHOUT_HITS:
-    my @phyloScores = list zeroes scalar @ql;
+    my @phyloScores = list zeroes $num_query_ancestors;
     $phyloScores[ $oldest_stratum ] = 1;
-    $PhyloStratum_scores{$qry_seq} = \@phyloScores;
+    $HardPhyloScores{$qry_seq} = \@phyloScores;
 }
 print_OUT("Finished calculating hard coded scores");
-print_OUT("Printing summary scores to [ $out.qry_node_phylostratumscores.txt ].");
+print_OUT("Printing summary scores to [ $out.hard_score.summary.txt ].");
 
 # Print out the PhyloStratumScores as hardcoded
-open(OUT,">$out.qry_node_phylostratumscores.txt") or die $!;
+open(OUT,">$out.hard_score.summary.txt") or die $!;
 print OUT join "\t", @ql;
 print OUT "\n";
-print OUT join "\t", list sumover mpdl values %PhyloStratum_scores;
+print OUT join "\t", list sumover mpdl values %HardPhyloScores;
 print OUT "\n";
 close(OUT);
 
-print_OUT("Printing gene phylostratum scores to [ $out.txt ].");
+print_OUT("Printing gene phylostratum scores to [ $out.hard_score.txt ].");
 
 # Make table with scores for each gene
 my $phyloScoresTable = join "\t", ("ID",@ql);
 $phyloScoresTable .= "\n";
 
-while (my ($qry_id,$qry_scores) = each %PhyloStratum_scores) {
+while (my ($qry_id,$qry_scores) = each %HardPhyloScores) {
+    chomp($qry_id);
     $phyloScoresTable .= join "\t", ($qry_id,@$qry_scores);
     $phyloScoresTable .= "\n";
 }
-open(OUT,">$out.txt") or die $!;
+
+$phyloScoresTable =~ s/\n^\t/\t/g; # sometimes there is a odd think in which the scores are printed on a different line. this should solve this issue.
+open(OUT,">$out.hard_score.txt") or die $!;
 print OUT $phyloScoresTable;
 close(OUT);
+
+
+# ##### PRINT SOFT-SCORES ########
+# soft scores are defined as: coverage*(1 - pvalue)*score.
+# This conveys information on how much of the query sequence in being capture (coverage),
+# how well it is being capture (score) and how likely is this alignment not to be by chance (1 - pvalue).
+# All soft-scores are normalised on [0,1] scale to solve the problem the the alignment scores is not normalised.
+if (defined $soft_threshold){
+    print_OUT("Printing soft-threshold gene scores scores to [ $out.soft_score.txt ].");
+    open (SOFT,">$out.soft_score.txt") or die $!;
+    print  SOFT "ID\t",join "\t", @ql;
+    print  SOFT "\n";
+    while (my ($qry_id,$qry_scores) = each %SoftPhyloScores) {
+        my $last = 0;
+        my $scores;
+        foreach my $stratum (@ql){
+            if (exists $SoftPhyloScores{ $qry_id }->{ $stratum }){
+                if ($SoftPhyloScores{ $qry_id }->{ $stratum } > $last){
+                    $last = $SoftPhyloScores{ $qry_id }->{ $stratum };
+                }
+            }
+            push @{ $scores }, $last;
+        }
+        $scores = flat pdl $scores;
+        my $nelem = $scores->nelem;
+        if (not defined $return_raw_score) {
+            $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
+            $scores /= $scores->sum ;
+        }
+        $SoftPhyloScores{ $qry_id } = $scores;
+        chomp($qry_id);
+        print  SOFT "$qry_id\t", join "\t",list $scores;
+        print SOFT "\n";
+    }
+    close(SOFT);
+
+    print_OUT("Printing PhyloStratum level scores to [ $out.soft_score.summary.txt ].");
+    open(OUT,">$out.soft_score.summary.txt") or die $!;
+    print OUT join "\t", @ql;
+    print OUT "\n";
+    print OUT join "\t", list sumover mpdl values %SoftPhyloScores;
+    print OUT "\n";
+    close(OUT);
+}
+
+###### WORK ON BOOSTRAP VALUES ###########
+if (defined $bootstrap){
+    print_OUT("Calculating bootstrap confidence intervals");
+    my $N_hard = scalar keys %HardPhyloScores;
+    # store the indexes of the score matrices that constitute each of the bootstrap replicates
+    print_OUT("   '-> Sampling [ $bootstrap ] random sets of genes");
+    my %bootstrap_indexes = ();
+    for (my $b = 0 ; $b < $bootstrap; $b++){
+        $bootstrap_indexes{$b} = pdl get_index_sample($N_hard,$N_hard,1);
+    }
+    print_OUT("       ... done ...");
+
+    # do bootstrap for hard scores
+    print_OUT("   '-> Calculating stats over bootstrap replicates for [ " . scalar (values %HardPhyloScores) . " ] gene hard scores");
+    my $hardscores = mpdl values %HardPhyloScores;
+    my $hardBootstrap = zeroes $num_query_ancestors, $bootstrap;
+    
+    while (my ($b,$idx) = each %bootstrap_indexes){
+        $hardBootstrap(,$b) .= $hardscores($idx,)->sumover->flat;
+    }
+    print_OUT("       ... done ...");
+
+    my @percentiles = (0.025,0.16,0.25,0.5,0.75,0.84,0.975);
+    
+    print_OUT("   '-> Printing bootstrap values for hard coded scores to [ $out.hard_score.bootstrap.txt ]");
+    open(OUT,">$out.hard_score.bootstrap.txt") or die $!;
+    print OUT "RANK\tPhyloStratum\t", join "\tq", ("SUM",@percentiles);
+    print OUT "\n";
+    for (my $rank = 0; $rank <$num_query_ancestors; $rank++){
+        print OUT "$rank\t$ql[$rank]\t",$hardscores(,$rank)->flat->sum;
+        foreach my $p (@percentiles){
+            print OUT "\t",quantile($hardBootstrap($rank,)->flat,$p,7);
+        }
+        print OUT "\n";
+    }
+    close(OUT);
+    print_OUT("       ... done ...");
+
+    
+    # do bootstrap for soft scores
+    if (defined $soft_threshold){
+        print_OUT("   '-> Calculating stats over bootstrap replicates for [ " . scalar (values %SoftPhyloScores) . " ] gene soft scores");
+        my $softscores = mpdl values %SoftPhyloScores;
+        my $softBootstrap = zeroes $num_query_ancestors, $bootstrap;
+        
+        my @n_soft_scored_genes = $softscores->dims;
+        while (my ($b,$idx) = each %bootstrap_indexes){
+            if (  $idx->nelem > $n_soft_scored_genes[0]){
+                my $good_idx = which($idx < $n_soft_scored_genes[0]);
+                $idx = $idx($good_idx);
+            }
+            $softBootstrap(,$b) .= $softscores($idx,)->sumover->flat;
+        }
+        print_OUT("       ... done ...");
+        print_OUT("   '-> Printing bootstrap values for soft coded scores to [ $out.soft_score.bootstrap.txt ]");
+        open(OUT,">$out.soft_score.bootstrap.txt") or die $!;
+        print OUT "RANK\tPhyloStratum\t", join "\tq", ("SUM",@percentiles);
+        print OUT "\n";
+        for (my $rank = 0; $rank < $num_query_ancestors; $rank++){
+            print OUT "$rank\t$ql[$rank]\t",$softscores(,$rank)->flat->sum;
+            foreach my $p (@percentiles){
+                print OUT "\t",quantile($softBootstrap($rank,)->flat,$p,7);
+            }
+            print OUT "\n";
+        }
+        close(OUT);
+        print_OUT("       ... done ...");
+    }
+}
+
 
 print_OUT("Done");
 
@@ -426,10 +593,12 @@ B<This program> will perform a PhyloStratigraphy analysis. It provides a impleme
     Analysis options
     -hard, --hard_threshold    Switches to original methodology of Domazet-Loso et. al. (2003)
     -soft, --soft_threshold    Uses a softhreshols strategy that aims to account for coverage and uncertaintiy of blast results.
-    -use_coverage  Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+    -score_type                 Define the type of score to use. Integer: 1 (defauly),2,3 or 4. See manual for details.
+    -raw_score                  Do not scale score to sum upto 1 for each genes across all phylostratum
     -no_ncbi_entrez     Do not use NCBI Entrez API to get information on sequence ids without data on local DBs.
     -ncbi_entrez_batch_size Number of IDs to submit to the NCBI API at time. DO NOT SET IT TO MORE THAN 500 (defualt 500).
     -guess_qry_specie   use blast result to guess query species.
+    -bootstrap, -b      Calculate boostrap confidence intervals for phylostratum scores.
 
 
  
@@ -476,11 +645,21 @@ Print complete documentation
 
 =item B<-soft, --soft_threshold>
  
- Uses a softhreshols strategy that aims to account for coverage and uncertaintiy of blast results.
-
-=item B<-use_coverage>
+ The original methodology relies on assigning 0 or 1 scores to phylostratum depending on whether we find an similar sequence using a e-value threshold for the sequence similarity search. This method has as potential drawback thet arbitrary value the e-value threshold. To use out soft-threshold strategy add the option -soft or --soft_threshold. The scores represents: coverage*(1-p_value)*score, where the coverage is the lengthg of the alignment divided by the lenght of the query sequence, score is the bit-scores of the alignment and p_value is equal to exp(-e_value) (probability of finding at least 1 hist with score equal or larger than the alignment score). The reported score correspond to the largest on each phylostratum. Due to the nested structure of the phylostratum we only score a stratum based on sequences not present on its descendants that are part of teh lineage of the query sequences. For example, the human lineage is Homininae->Homo->Homo sapiens, so the score of Homininae will be calculated with sequences on Homininae but not present on Homo or any descendant on Homo. In this way the score represent a continous measure of the best available evidence that the query sequence had a homologues at that phylostratum. The resulting scores will be scaled between 0 and 1 and each phylostratum will have its own score. A output file called *.soft_score.txt will have the soft-threshold scores. The normal output with 0/1 entries will still be produced.
  
- Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+=item B<-score_type>
+ 
+ Define the type of score to use. Integer: 1,2,3 or 4.
+ 1: coverage*(1-p_value)*score (default)
+ 2: coverage*score;
+ 3: score
+ 4: pvalue
+ 
+ Please aware that this is a experimental option and we have not tested the biological meaning of analyses using it.
+ 
+=item B<-raw_score>
+ 
+ Do not scale score to sum upto 1 for each genes across all phylostratum
  
 =item B<-no_ncbi_entrez>
  
@@ -493,6 +672,10 @@ Print complete documentation
 =item B<-guess_qry_specie>
  
  Use blast result to guess query species. This done by selecting the most common specie with 100% identify blast hits. This (may) will only work if the specie of interest is actually on the DB use for the blast searches.
+
+=item B<-bootstrap, -b>
+ 
+ Calculate boostrap confidence intervals for phylostratum scores. This will work for both hard and soft scores. It will produce two new files called *.hard_score.bootstrap.txt or *.soft_score.bootstrap.txt with 0.025, 0.16, 0.25, 0.5, 0.75, 0.84 and 0.975 confidence intervals.
 
 =back
  
@@ -516,7 +699,13 @@ That will create the folder "ncbi_tax_data", download the necessay files and par
 
 To run the analyses with a small example do
 
->perl phylostratiphy.pl  -tax_folder ncbi_tax_data/ -query_taxon 9606 -out test_phylostratiphy -blast_format table -blast example/dysbindin.blast_out.txt -email youremail@something.com
+>perl phylostratiphy.pl  \
+    -tax_folder ncbi_tax_data/ \
+    -query_taxon 9606 \
+    -out test_phylostratiphy \
+    -blast_format table \
+    -blast example/dysbindin.blast_out.txt \
+    -email youremail@something.com
 
 The example consistes of human sequences and so -query_taxon 9606 corresponds to the human tax id.
 
@@ -524,7 +713,13 @@ The example consistes of human sequences and so -query_taxon 9606 corresponds to
  
 To run the analyses with a small example do
  
->perl phylostratiphy.pl  -tax_folder ncbi_tax_data/ -guess_qry_specie -out test_phylostratiphy -blast_format table -blast example/dysbindin.blast_out.txt -email youremail@something.com
+>perl phylostratiphy.pl  \
+    -tax_folder ncbi_tax_data/ \
+    -guess_qry_specie \
+    -out test_phylostratiphy \
+    -blast_format table \
+    -blast example/dysbindin.blast_out.txt \
+    -email youremail@something.com
 
 Here we replace the -query_taxon 9606 option for -guess_qry_specie. In this case part of the output will be 
 
@@ -533,6 +728,35 @@ Here we replace the -query_taxon 9606 option for -guess_qry_specie. In this case
 
 You should always confirm that the specie that the program is assigning to the query sequences is correct!
  
+=item B<4. Obtain soft-scores>
+ 
+The original methodology relies on assigning 0 or 1 scores to phylostratum depending on whether we find an similar sequence using a e-value threshold for the sequence similarity search. This method has as potential drawback thet arbitrary value the e-value threshold. To use out soft-threshold strategy add the option -soft or --soft_threshold. The resulting scores will be scaled between 0 and 1 and each phylostratum will have its own score.
+ 
+>perl phylostratiphy.pl  \
+    -tax_folder ncbi_tax_data/ \
+    -query_taxon 9606 \
+    -out test_phylostratiphy \
+    -blast_format table \
+    - blast example/dysbindin.blast_out.txt \
+    -email youremail@something.com
+    -soft
+ 
+A output file called *.soft_score.txt will have the soft-threshold scores. The normal output with 0/1 entries will still be produced.
+
+=item B<5. Calculate scores' confidence intervals>
+ 
+To calculate bootstrap confidence intervals you can use a command like:
+ 
+>perl phylostratiphy.pl  \
+     -tax_folder ncbi_tax_data/ \
+     -query_taxon 9606 \
+     -out test_phylostratiphy \
+     -blast_format table \
+     - blast example/dysbindin.blast_out.txt \
+     -email youremail@something.com
+     -soft -b 100
+ 
+Which will run 100 bootstrap sampling and will produce two additional output files called *.hard_score.bootstrap.txt or *.soft_score.bootstrap.txt.
  
 =back
 

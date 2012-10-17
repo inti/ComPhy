@@ -12,6 +12,9 @@ eval {
     use Fcntl;
     use Data::Dumper;
     use PDL;
+    use PDL::Math;
+    use PDL;
+    use PDL::NiceSlice;
 };
 if ($@) { 
 	print "Some libraries does not seem to be in you system. quitting\n";
@@ -20,8 +23,225 @@ if ($@) {
 
 our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 
-@EXPORT = qw(parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
-@EXPORT_OK = qw(parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+@EXPORT = qw(quantile get_index_sample blosum62_self_scoring calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);				# symbols to export by default
+@EXPORT_OK = qw(quantile get_index_sample blosum62_self_scoring calculate_soft_score parse_paralign_table round_up parse_blast_table get_taxid_from_acc get_lca_from_lineages get_tree_from_taxids fetch_tax_ids_from_blastdb return_all_Leaf_Descendents nr_array parse_gi_taxid_files print_OUT build_database progress_bar read_taxonomy_files);			# symbols to export on request
+
+sub quantile {
+=head2 quantile
+     
+     Calculate  sample quantiles corresponding to the given probabilities.
+     The smallest observation corresponds to a probability of 0 and the
+     largest to a probability of 1. Adapted from the function of the same
+     name in the R package.
+     
+     Usage:
+     
+     $p = quantile($x, $q, [$type, $sorted])
+     
+     Where x is the sample vector, q is the quantile required (e.g. 0.5 corresponds
+     to the median, 0.16 and 0.84 the 16th and 84th percentiles and hence the
+     difference between the two is the 2sigma width in the case of a Gaussian.
+     
+     Type allows you to choose a different statistics for estimation of the
+     quantiles. See the R documentation for details. The types are indicated by
+     a number and range from 1 to 9. The default is type 8 which appears to be
+     the best choice as it is approximately median unbiased - note that S and R
+     and use type 7.
+     
+     The sorted option is there to indicate that your data is already sorted and
+     hence sorting is not necessary.
+ 
+=cut
+    
+    my ($x, $p, $type, $sorted) = @_;
+    
+    $type = 8 if !defined($type);
+    $type = 8 if $type =~/default/i || $type == 0;
+    $sorted = 0 unless defined($sorted);
+    
+    if ($type < 1 || $type > 9) {
+        print "Only quantile estimators 1-9 are supported!\n";
+        return;
+    }
+    
+    # If $p is a Perl scalar then we want to return a Perl scalar to
+    # minimize suprise.
+    my $p_is_scalar = (ref($p) ? 0 : 1);
+    if (ref($p) eq 'ARRAY') {
+        # Quietly convert.
+        $p = pdl($p);
+    }
+    
+    
+    #
+    # Sort the x-values.
+    #
+    my $xs; # Sorted x-values
+    if ($sorted) {
+        $xs = $x;
+    } else {
+        $xs = qsort($x);
+    }
+    
+    #
+    # Make sure only good values are used
+    #
+    my $good = which($xs->isfinite());
+    
+    #
+    # We should here determine the machine precision.
+    #
+    my $eps= 2.2204460e-16;
+    
+    my $n_x=$x->nelem();
+    
+    #
+    # Do the actual calculation
+    #
+    my ($j, $gamma);
+    
+    if ($type <= 3) {
+        #
+        # Discrete estimators
+        #
+        
+        my @m_types = (0, 0, -0.5);
+        my $m = $m_types[$type-1];
+        
+        # find the j value (integer portion)
+        $j = floor($p*$n_x + $m);
+        # Find g (fraction)
+        my $g = $p*$n_x + $m - $j;
+        $gamma = zeroes($g->nelem());
+        
+        my ($i_above, $i_below) = which_both($g > 0);
+        
+        if ($i_above->nelem() > 0) {
+            $gamma($i_above) .= 1
+        }
+        if ($i_below->nelem() > 0) {
+            if ($type == 1) {
+                $gamma($i_below) .= 0;
+            } elsif ($type == 2) {
+                $gamma($i_below) .= 0.5
+            } elsif ($type == 3) {
+                my ($i1, $i2) = which_both(($j($i_below) % 2) == 0);
+                $gamma($i_below($i1)) .= 0 if $i1->nelem() > 0;
+                $gamma($i_below($i2)) .= 0 if $i2->nelem() > 0;
+            }
+        }
+        
+        
+    } else {
+        #
+        # Continuous estimators.
+        #
+        my @alpha_all = (0, 0.5, 0., 1, 0.333333333, 0.375);
+        my $alpha = $alpha_all[$type-4];
+        my $beta = $alpha;
+        
+        my $m = $alpha+$p*(1.0-$alpha-$beta);
+        $j = floor($p*$n_x + $m + 4.0*$eps);
+        my $g = $p*$n_x+$m - $j;
+        
+        $gamma = zeroes($g->nelem());
+        my $i_above = which(abs($g) >= 4*$eps);
+        $gamma($i_above) .= $g($i_above) if $i_above->nelem() > 0;
+        
+        #    $gamma = (abs($g) < 4*$eps ? 0.0 : $g);
+        
+    }
+    
+    $j = $j-1;
+    
+    
+    # Linear interpolation
+    my $j1 = pdl($j);
+    $j1->where($j1 < 0) .= 0.0;
+    my $j2 = pdl($j+1);
+    $j2->where($j2 > $n_x-1) .= 0.0;
+    
+    my $Q_p = (1.0-$gamma)*$xs($j1) + $gamma*$xs($j2);
+    
+    
+    if ($p_is_scalar) {
+        return $Q_p->at(0);
+    } else {
+        return $Q_p
+    }
+    
+}
+
+sub get_index_sample {
+    my $N = shift;
+    my $max_index = shift;
+    my $with_replacement = shift;
+    defined $with_replacement or $with_replacement = 0;
+    my @back = ();
+    if ($with_replacement == 1){
+        for (my $i = 0; $i < $N; $i++){
+            push @back, int(rand($max_index));
+        }
+    }else {
+        my @idx = 0 .. $max_index - 1;
+        my %idx = ();
+        while (scalar (keys %idx) < $N){
+            my $int = int(rand($max_index));
+            $idx{$int} = '';
+        }
+        @back = keys %idx;
+    }
+    return(\@back);
+}
+
+sub blosum62_self_scoring {
+    my $seq = shift;
+    my %blosum62_diagonal = (
+                            'C' => 9,
+                            'S' => 4,
+                            'T' => 4,
+                            'P' => 7,
+                            'A' => 6,
+                            'G' => 4,
+                            'N' => 6,
+                            'D' => 6,
+                            'E' => 5,
+                            'Q' => 5,
+                            'H' => 8,
+                            'R' => 5,
+                            'K' => 5,
+                            'M' => 5,
+                            'I' => 4,
+                            'L' => 4, 
+                            'V' => 4, 
+                            'F' => 6, 
+                            'Y' => 7, 
+                            'W' => 11,
+                            '*' => 1,
+                            'X' => 1);
+    my $score = 0;
+    foreach my $aa (split('',$seq)){
+        $score += $blosum62_diagonal{uc($aa)} if (exists $blosum62_diagonal{uc($aa)});
+    }
+    my $lambda =  0.252;
+    my $K = 0.035;
+    return(( $lambda*$score - log($K) )/log(2));
+}
+
+sub calculate_soft_score{
+    my $seq_data = shift;
+    my $score_type = shift;
+    if ($score_type == 1){
+        return($seq_data->{'coverage'}*(1 - $seq_data->{'pvalue'})*$seq_data->{'score'});
+    } elsif ($score_type == 2){
+        return($seq_data->{'coverage'}*$seq_data->{'score'});
+    } elsif ($score_type == 3){
+        return($seq_data->{'score'});
+    } elsif ($score_type == 4){
+        return($seq_data->{'pvalue'});
+    }
+    return(-1);
+}
 
 sub round_up {
     my $number = shift;
@@ -84,8 +304,8 @@ sub parse_paralign_table {
         $p_value = pdl 1 - $p_value;
         $p_value = pdl $e_value if ($p_value == 0);
         #### BOTH COVERAGE AND %IDENTITY ARE NOT WELL CALCULATED HERE. THIS NEEDS TO BE REVIEWED.
-        my $coverage = $data[ $fields{'alignment_length'}]/$data[ $fields{'subject_length'}];
-        my $percent_identity = 100*$data[ $fields{'n_identical_symbols'}]/$data[ $fields{'alignment_length'}];
+        my $coverage = $data[ $fields{'alignment_length'} ];
+        my $percent_identity = $data[ $fields{'n_identical_symbols'} ];
         $data[ $fields{'query_id'}] =~ s/ /_/g;
         my $frame = 0;
         push @{ $back{ $data[ $fields{'query_id'}] }  }, {  'subject_id' => $subject_id[1],
@@ -107,6 +327,8 @@ sub parse_blast_table {
     open (FILE,$file) or die $!;
     my %fields = ();
     my $qry_id = "";
+#    my @lines = <FILE>;
+#    foreach my $line (@lines){
     while (my $line = <FILE>){
         # get the query id in case that there are not blast hits
         # if line has the header of the table. split the header and keep the columns names.
@@ -119,7 +341,7 @@ sub parse_blast_table {
                 $qry_id = $fs[0];
             }
             if ($line =~ m/^# 0 hits found/){
-                @{ $back{ $qry_id } } = [];
+                $back{ $qry_id } = [];
             }
             if ($line =~ m/^# Fields:/){
                 # clean up a bit the line
@@ -162,7 +384,7 @@ sub parse_blast_table {
                                                             'evalue' => $e_value,
                                                             'coverage' => $coverage,
                                                             'frames' => $frame,
-                                                            'percent_identity' => $data[ $fields{'percent_identity'}],
+                                                            'percent_identity' => $data[ $fields{'percent_identity'}]/100,
                                                           };
 
     }
