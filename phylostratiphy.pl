@@ -379,7 +379,10 @@ my %HardPhyloScores = ();
 my $num_query_ancestors = scalar @ql;
 foreach my $qry_seq (keys %S) {
     my $oldest_stratum = $num_query_ancestors - 1;
-    $SoftPhyloScores{ $qry_seq }->{ $ql[-1] } =  blosum62_self_scoring($seq_size{$qry_seq}) if (defined $seqs);
+    $SoftPhyloScores{ $qry_seq }->{ $ql[ $oldest_stratum ] } =  blosum62_self_scoring($seq_size{$qry_seq}) if (defined $seqs);
+    if (not defined $seqs and scalar @{ $S{ $qry_seq } } == 0){ # this will make sure that this sequence is score
+        $SoftPhyloScores{ $qry_seq }->{ $ql[ -1 ] } = pdl 1;
+    }
     foreach my $target_seq ( @{ $S{ $qry_seq } } ){
         next if (not exists $gi_taxData{ $target_seq->{'subject_id'}}); # this ids have been printed to a file already.
         my $lca = $gi_taxData{ $target_seq->{'subject_id'} }->{'lca_with_qry'};
@@ -423,9 +426,12 @@ my $phyloScoresTable = join "\t", ("ID",@ql);
 $phyloScoresTable .= "\n";
 
 while (my ($qry_id,$qry_scores) = each %HardPhyloScores) {
+    chomp($qry_id);
     $phyloScoresTable .= join "\t", ($qry_id,@$qry_scores);
     $phyloScoresTable .= "\n";
 }
+
+$phyloScoresTable =~ s/\n^\t/\t/g; # sometimes there is a odd think in which the scores are printed on a different line. this should solve this issue.
 open(OUT,">$out.hard_score.txt") or die $!;
 print OUT $phyloScoresTable;
 close(OUT);
@@ -442,7 +448,7 @@ if (defined $soft_threshold){
     print  SOFT "ID\t",join "\t", @ql;
     print  SOFT "\n";
     while (my ($qry_id,$qry_scores) = each %SoftPhyloScores) {
-        my $last = 1;
+        my $last = 0;
         my $scores;
         foreach my $stratum (@ql){
             if (exists $SoftPhyloScores{ $qry_id }->{ $stratum }){
@@ -456,9 +462,10 @@ if (defined $soft_threshold){
         my $nelem = $scores->nelem;
         $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
         $scores /= $scores->sum;
+        $SoftPhyloScores{ $qry_id } = $scores;
+        chomp($qry_id);
         print  SOFT "$qry_id\t", join "\t",list $scores;
         print SOFT "\n";
-        $SoftPhyloScores{ $qry_id } = $scores;
     }
     close(SOFT);
 
@@ -515,6 +522,8 @@ if (defined $bootstrap){
         print_OUT("   '-> Calculating stats over bootstrap replicates for soft scores");
         my $softscores = mpdl values %SoftPhyloScores;
         my $softBootstrap = zeroes $num_query_ancestors, $bootstrap;
+        
+        my @n_soft_scored_genes = $softscores->dims;
         while (my ($b,$idx) = each %bootstrap_indexes){
             $softBootstrap(,$b) .= $softscores($idx,)->sumover->flat;
         }
