@@ -233,6 +233,12 @@ sub calculate_soft_score{
     my $score_type = shift;
     if ($score_type == 1){
         return($seq_data->{'coverage'}*(1 - $seq_data->{'pvalue'})*$seq_data->{'score'});
+    } elsif ($score_type == 2){
+        return($seq_data->{'coverage'}*$seq_data->{'score'});
+    } elsif ($score_type == 3){
+        return($seq_data->{'score'});
+    } elsif ($score_type == 4){
+        return($seq_data->{'pvalue'});
     }
     return(-1);
 }

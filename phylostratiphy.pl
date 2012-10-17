@@ -18,7 +18,7 @@ use NCBI_PowerScripting;
 
 our (   $help, $man, $tax_folder, $blast_out, $blast_format, $user_provided_query_taxon_id, $out,
         $use_coverage, $hard_threshold, $soft_threshold,$blastdbcmd,
-        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL,$score_type, $seqs, $bootstrap );
+        $seq_db, $not_use_ncbi_entrez, $guess_qry_specie, $ncbi_entrez_batch_size, $max_eutils_queries,$EMAIL,$score_type, $seqs, $bootstrap, $return_raw_score );
 
 GetOptions(
     'help' => \$help,
@@ -39,6 +39,7 @@ GetOptions(
     'max_eutils_queries=i' => \$max_eutils_queries,
     'email' => \$EMAIL,
     'score_type=i' => \$score_type,
+    'raw_score' => \$return_raw_score,
     'seq=s' => \$seqs,
     'bootstrap|b=i' => \$bootstrap,
 ) or pod2usage(0);
@@ -454,8 +455,10 @@ if (defined $soft_threshold){
         }
         $scores = flat pdl $scores;
         my $nelem = $scores->nelem;
-        $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
-        $scores /= $scores->sum;
+        unless (defined $return_raw_score) {
+            $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
+            $scores /= $scores->sum ;
+        }
         print  SOFT "$qry_id\t", join "\t",list $scores;
         print SOFT "\n";
         $SoftPhyloScores{ $qry_id } = $scores;
@@ -578,7 +581,8 @@ B<This program> will perform a PhyloStratigraphy analysis. It provides a impleme
     Analysis options
     -hard, --hard_threshold    Switches to original methodology of Domazet-Loso et. al. (2003)
     -soft, --soft_threshold    Uses a softhreshols strategy that aims to account for coverage and uncertaintiy of blast results.
-    -use_coverage  Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+    -score_type                 Define the type of score to use. Integer: 1 (defauly),2,3 or 4. See manual for details.
+    -raw_score                  Do not scale score to sum upto 1 for each genes across all phylostratum
     -no_ncbi_entrez     Do not use NCBI Entrez API to get information on sequence ids without data on local DBs.
     -ncbi_entrez_batch_size Number of IDs to submit to the NCBI API at time. DO NOT SET IT TO MORE THAN 500 (defualt 500).
     -guess_qry_specie   use blast result to guess query species.
@@ -631,9 +635,19 @@ Print complete documentation
  
  The original methodology relies on assigning 0 or 1 scores to phylostratum depending on whether we find an similar sequence using a e-value threshold for the sequence similarity search. This method has as potential drawback thet arbitrary value the e-value threshold. To use out soft-threshold strategy add the option -soft or --soft_threshold. The scores represents: coverage*(1-p_value)*score, where the coverage is the lengthg of the alignment divided by the lenght of the query sequence, score is the bit-scores of the alignment and p_value is equal to exp(-e_value) (probability of finding at least 1 hist with score equal or larger than the alignment score). The reported score correspond to the largest on each phylostratum. Due to the nested structure of the phylostratum we only score a stratum based on sequences not present on its descendants that are part of teh lineage of the query sequences. For example, the human lineage is Homininae->Homo->Homo sapiens, so the score of Homininae will be calculated with sequences on Homininae but not present on Homo or any descendant on Homo. In this way the score represent a continous measure of the best available evidence that the query sequence had a homologues at that phylostratum. The resulting scores will be scaled between 0 and 1 and each phylostratum will have its own score. A output file called *.soft_score.txt will have the soft-threshold scores. The normal output with 0/1 entries will still be produced.
  
-=item B<-use_coverage>
+=item B<-score_type>
  
- Means that scores are weightes by coverage of sequence alignment. Not compatible with -hard.
+ Define the type of score to use. Integer: 1,2,3 or 4.
+ 1: coverage*(1-p_value)*score (default)
+ 2: coverage*score;
+ 3: score
+ 4: pvalue
+ 
+ Please aware that this is a experimental option and we have not tested the biological meaning of analyses using it.
+ 
+=item B<-raw_score>
+ 
+ Do not scale score to sum upto 1 for each genes across all phylostratum
  
 =item B<-no_ncbi_entrez>
  
