@@ -461,7 +461,7 @@ if (defined $soft_threshold){
         }
         $scores = flat pdl $scores;
         my $nelem = $scores->nelem;
-        unless (defined $return_raw_score) {
+        if (not defined $return_raw_score) {
             $scores(1:$nelem - 1) .= abs($scores(0:$nelem - 2) - $scores(1:$nelem - 1));
             $scores /= $scores->sum ;
         }
@@ -486,7 +486,7 @@ if (defined $bootstrap){
     print_OUT("Calculating bootstrap confidence intervals");
     my $N_hard = scalar keys %HardPhyloScores;
     # store the indexes of the score matrices that constitute each of the bootstrap replicates
-    print_OUT("   '-> Sampling random sets of genes");
+    print_OUT("   '-> Sampling [ $bootstrap ] random sets of genes");
     my %bootstrap_indexes = ();
     for (my $b = 0 ; $b < $bootstrap; $b++){
         $bootstrap_indexes{$b} = pdl get_index_sample($N_hard,$N_hard,1);
@@ -494,7 +494,7 @@ if (defined $bootstrap){
     print_OUT("       ... done ...");
 
     # do bootstrap for hard scores
-    print_OUT("   '-> Calculating stats over bootstrap replicates for hard scores");
+    print_OUT("   '-> Calculating stats over bootstrap replicates for [ " . scalar (values %HardPhyloScores) . " ] gene hard scores");
     my $hardscores = mpdl values %HardPhyloScores;
     my $hardBootstrap = zeroes $num_query_ancestors, $bootstrap;
     
@@ -522,12 +522,16 @@ if (defined $bootstrap){
     
     # do bootstrap for soft scores
     if (defined $soft_threshold){
-        print_OUT("   '-> Calculating stats over bootstrap replicates for soft scores");
+        print_OUT("   '-> Calculating stats over bootstrap replicates for [ " . scalar (values %SoftPhyloScores) . " ] gene soft scores");
         my $softscores = mpdl values %SoftPhyloScores;
         my $softBootstrap = zeroes $num_query_ancestors, $bootstrap;
         
         my @n_soft_scored_genes = $softscores->dims;
         while (my ($b,$idx) = each %bootstrap_indexes){
+            if (  $idx->nelem > $n_soft_scored_genes[0]){
+                my $good_idx = which($idx < $n_soft_scored_genes[0]);
+                $idx = $idx($good_idx);
+            }
             $softBootstrap(,$b) .= $softscores($idx,)->sumover->flat;
         }
         print_OUT("       ... done ...");
