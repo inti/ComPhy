@@ -70,27 +70,40 @@ foreach my $gene (sort {$a cmp $b } keys %annotation){
 my $phylostratum_scores = mpdl map {  $annotation{$_}->{scores};  } sort { $gene_index{$a} <=> $gene_index{$b} } keys %annotation;
 
 ## define variables for the z-score calculation
+print_OUT("Calculating enrichment z-scores");
 my $phylostratum_totals = $phylostratum_scores->sumover->flat;
 my $N = $phylostratum_totals->sum;
-
+my $out_string = join "\t", ("GO",@phylostratum);
+$out_string .= "\n";
 foreach my $set (keys %gene_sets){
-    print "$set\n";
     my $profile = zeroes scalar @phylostratum;
     foreach my $gene (@{$gene_sets{$set}->{genes}}){
         $profile += pdl $annotation{$gene}->{scores};
     }
-    print $profile,"\n";
     my $R = $profile->sum();
+    my @z_scores = ();
     for (my $i = 0; $i < $profile->nelem; $i++){
         my ($r) = $profile($i)->list;
         my ($n) = $phylostratum_totals($i)->list;
-        next if ($n == 0);
-        print "$phylostratum[$i] $N $R $n $r";
-        my ($z) = hygeometric_dist_z_score($N,$n,$R,$r);
-        print " Z: $z\n";
+        if ($n == 0){
+            push @z_scores, 0;
+            next;
+        }
+        push @z_scores, hygeometric_dist_z_score($N,$n,$R,$r);
     }
-    getc;
+    $out_string .= "$set\t" . join "\t", @z_scores;
+    $out_string .= "\n";
 }
+print_OUT("    ... done ...");
+
+print_OUT("Writting results to [ $out ]");
+open(OUT,">$out") or die $!;
+print OUT $out_string;
+close(OUT);
+print_OUT("Finished");
+
+exit;
+
 
 sub hygeometric_dist_z_score {
     my ($N,$n,$R,$r) = @_;
@@ -98,6 +111,3 @@ sub hygeometric_dist_z_score {
     my $z = ($r - $n*$R_over_N)/sqrt($n*($R_over_N)*(1-$R_over_N)*(1 - ($n - 1)/( $N - 1)));
     return($z);
 }
-
-
-exit;
