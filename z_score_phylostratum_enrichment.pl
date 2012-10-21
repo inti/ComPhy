@@ -89,9 +89,15 @@ foreach my $set (keys %gene_sets){
         my ($r) = $profile($i)->list;
         my ($n) = $phylostratum_totals($i)->list;
         if ($n == 0){
-            push @z_scores, 0;
+            push @z_scores, "NaN";
             next;
         }
+        # Values are
+        # N=total number of genes on genome,
+        # R = total number of genes on the gene-set.
+        # r = number of gene-set's genes on a phylostratum and
+        # n = total number of genes  on phylostratum of interest.
+        #
         push @z_scores, hygeometric_dist_z_score($N,$n,$R,$r);
     }
     $out_string_z_score .= "$set\t" . join "\t", @z_scores;
