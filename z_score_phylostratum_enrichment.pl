@@ -15,7 +15,7 @@ use constant E_CONSTANT => log(10);
 # local modules
 use PhyloStratiphytUtils;
 
-our (   $help, $man, $out, $score_matrix, $annot, $collapse, $summary_annotation );
+our (   $help, $man, $out, $score_matrix, $annot, $collapse, $summary_annotation, $bootstrap );
 
 GetOptions(
         'help' => \$help,
@@ -24,14 +24,15 @@ GetOptions(
         'score_matrix|m=s' => \$score_matrix,
         'annot|a=s' => \$annot,
         'collapse|s=s' => \$collapse,
-        'summary_annotation' => \$summary_annotation
+        'summary_annotation' => \$summary_annotation,
+        'bootstrap|b=i' => \$bootstrap,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
 pod2usage(-exitstatus => 2, -verbose => 2) if (defined $man);
 pod2usage(-exitstatus => 2, -verbose => 2) if (not defined $annot and not defined $score_matrix);
 
-
+defined $bootstrap or $bootstrap = 2000;
 
 # read genes annotation
 print_OUT("Reading gene's annotation from [ $annot ]");
@@ -150,6 +151,71 @@ print_OUT("Writting results to [ $out.hard_score.txt ]");
 open(OUT,">$out.hard_score.txt") or die $!;
 print OUT $out_string_sets;
 close(OUT);
+
+if (defined $summary_annotation){
+    my @yes_annot = ();
+    my @not_annot = ();
+    foreach  my $gene (keys %annotation){
+        push @yes_annot, $annotation{$gene}->{scores} if (defined $annotation{$gene}->{sets});
+        push @not_annot, $annotation{$gene}->{scores} if (not defined $annotation{$gene}->{sets});
+    }
+    my $y_annot = pdl @yes_annot;
+    $y_annot = $y_annot->xchg(0,1);
+    my $y_annot_sums = $y_annot->sumover;
+    my $n_annot = pdl @not_annot;
+    $n_annot = $n_annot->xchg(0,1);
+    my $n_annot_sums = $n_annot->sumover;
+    my $N_yes = scalar @yes_annot;
+    my $N_not = scalar @not_annot;
+    print_OUT("Calculating boostrap confidence intervals for annotation summaries");
+    my %bootstrap_indexes = ();
+    for (my $b = 0 ; $b < $bootstrap; $b++){
+        $bootstrap_indexes{$b} = pdl get_index_sample($N_yes,$N_yes,1);
+    }    
+    my $YesBootstrap = zeroes scalar @phylostratum, $bootstrap;
+    while (my ($b,$idx) = each %bootstrap_indexes){
+        $YesBootstrap(,$b) .= $y_annot($idx,)->sumover->flat;
+    }
+
+    %bootstrap_indexes = ();
+    for (my $b = 0 ; $b < $bootstrap; $b++){
+        $bootstrap_indexes{$b} = pdl get_index_sample($N_not,$N_not,1);
+    }
+    my $NotBootstrap = zeroes scalar @phylostratum, $bootstrap;
+    while (my ($b,$idx) = each %bootstrap_indexes){
+        $NotBootstrap(,$b) .= $n_annot($idx,)->sumover->flat;
+    }
+    print_OUT("    ... done ...");
+    print_OUT("Printing annotation summary per phylostratum to [ $out.annot_summary.txt ]");
+    open (SUMMARY,">$out.annot_summary.txt")or die $!;
+    print SUMMARY "RANK\tPhylostratum\twith_annotation\twith_0.025\twith_0.975\twithout_annotation\twithout_0.025\twithout_0.975\tannot_freq\tannot_freq_0.025\tannot_freq_0.975\n";
+    for (my $i = 0; $i < scalar @phylostratum; $i++){
+        my $total = $n_annot_sums($i) + $y_annot_sums($i);
+        my $freq = 0;
+        if ($total > 0){
+            ($freq) = list $y_annot_sums($i)/$total;
+        }
+        my $low_yes = quantile($YesBootstrap($i,)->flat,'0.025',7);
+        my $up_yes = quantile($YesBootstrap($i,)->flat,'0.975',7);
+        
+        my $low_not = quantile($NotBootstrap($i,)->flat,'0.025',7);
+        my $up_not = quantile($NotBootstrap($i,)->flat,'0.975',7);
+        
+        my $low_freq  = 0;
+        $low_freq = $low_yes/($low_yes + $low_not) if ($low_yes + $low_not > 0);
+        my $up_freq = 0;
+        $up_freq = $up_yes/($up_yes + $up_not) if ($up_yes + $up_not > 0);
+        print SUMMARY $i,"\t";        
+        print SUMMARY $phylostratum[$i],"\t";
+        print SUMMARY $y_annot_sums($i)->list,"\t";
+        print SUMMARY $low_yes,"\t",$up_yes,"\t";
+        print SUMMARY $n_annot_sums($i)->list,"\t";
+        print SUMMARY $low_not,"\t",$up_not,"\t";
+        print SUMMARY $freq,"\t";
+        print SUMMARY $low_freq,"\t",$up_freq;
+        print SUMMARY "\n";
+    }
+}
 
 print_OUT("Finished");
 
