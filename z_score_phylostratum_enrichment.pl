@@ -15,7 +15,7 @@ use constant E_CONSTANT => log(10);
 # local modules
 use PhyloStratiphytUtils;
 
-our (   $help, $man, $out, $score_matrix, $annot, $collapse );
+our (   $help, $man, $out, $score_matrix, $annot, $collapse, $summary_annotation );
 
 GetOptions(
         'help' => \$help,
@@ -24,6 +24,7 @@ GetOptions(
         'score_matrix|m=s' => \$score_matrix,
         'annot|a=s' => \$annot,
         'collapse|s=s' => \$collapse,
+        'summary_annotation' => \$summary_annotation
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -127,10 +128,7 @@ foreach my $set (keys %gene_sets){
     if (defined $collapse){
         my ($n) = $phylostratum_totals($collapse_idx:$profile->nelem-1)->flat->sum;
         my ($r) = $profile($collapse_idx:$profile->nelem-1)->flat->sum;
-        push @z_scores, hygeometric_dist_z_score($N,$n,$R,$r);
-#        print "@phylostratum\n",$profile,"\n",$profile($collapse_idx:$profile->nelem-1)->flat->sum,"\n","N $N n $n R $R r $r z ",hygeometric_dist_z_score($N,$n,$R,$r);;
-#        getc;
-        
+        push @z_scores, hygeometric_dist_z_score($N,$n,$R,$r);        
     }
 
     $out_string_z_score .= "$set\t" . join "\t", @z_scores;
