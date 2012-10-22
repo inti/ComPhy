@@ -192,6 +192,9 @@ Comments, suggestions or complains you be addressed to IntiPedroso@gmail.com
  
     Output
     -out, --o      Name of output files
+ 
+    Additional Options
+    -collapse, -s   Collapse counts of phylostratums. Need to provide id of phylostratum after which to collaps the counts.
 
 
 =head1 OPTIONS
@@ -217,6 +220,10 @@ Comments, suggestions or complains you be addressed to IntiPedroso@gmail.com
 =item B<-o, --out>
 
     Name of output file
+ 
+=intem B<-collapse, -s>
+ 
+ Collapse counts of phylostratums. Need to provide id of phylostratum after which to collaps the counts.
 
 =back
 
