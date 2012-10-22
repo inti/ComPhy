@@ -15,7 +15,7 @@ use constant E_CONSTANT => log(10);
 # local modules
 use PhyloStratiphytUtils;
 
-our (   $help, $man, $out, $score_matrix, $annot );
+our (   $help, $man, $out, $score_matrix, $annot, $collapse );
 
 GetOptions(
         'help' => \$help,
@@ -23,6 +23,7 @@ GetOptions(
         'out|o=s' => \$out,
         'score_matrix|m=s' => \$score_matrix,
         'annot|a=s' => \$annot,
+        'collapse|s=s' => \$collapse,
 ) or pod2usage(0);
 
 pod2usage(0) if (defined $help);
@@ -70,13 +71,36 @@ foreach my $gene (sort {$a cmp $b } keys %annotation){
 my $phylostratum_scores = mpdl map {  $annotation{$_}->{scores};  } sort { $gene_index{$a} <=> $gene_index{$b} } keys %annotation;
 
 ## define variables for the z-score calculation
+my $collapse_idx = -1;
+if (defined $collapse){
+    my $c = 0;
+    foreach my $stratum (@phylostratum){
+        $collapse_idx = $c if ($stratum eq $collapse);
+        $c++;
+    }
+    if ($c == -1){
+        print_OUT("Could not find [ $collapse ] among the phylostratum. Continuing without executing this option");
+        $collapse= undef;
+    } else {
+        $collapse_idx++;
+        print_OUT("Will generate a new phylostratum with levels after [ $collapse ] called [ After_$collapse ]");
+    }
+}
+
 print_OUT("Calculating enrichment z-scores");
 my $phylostratum_totals = $phylostratum_scores->sumover->flat;
 my $N = $phylostratum_totals->sum;
 my $out_string_z_score = join "\t", ("GO",@phylostratum);
+if (defined $collapse){
+    $out_string_z_score .= "\tAfter_$collapse";
+}
 $out_string_z_score .= "\n";
 my $out_string_sets = join "\t", ("GO",@phylostratum);
+if (defined $collapse){
+    $out_string_sets .= "\tAfter_$collapse";
+}
 $out_string_sets .= "\n";
+
 
 foreach my $set (keys %gene_sets){
     my $profile = zeroes scalar @phylostratum;
@@ -100,9 +124,21 @@ foreach my $set (keys %gene_sets){
         #
         push @z_scores, hygeometric_dist_z_score($N,$n,$R,$r);
     }
+    if (defined $collapse){
+        my ($n) = $phylostratum_totals($collapse_idx:$profile->nelem-1)->flat->sum;
+        my ($r) = $profile($collapse_idx:$profile->nelem-1)->flat->sum;
+        push @z_scores, hygeometric_dist_z_score($N,$n,$R,$r);
+#        print "@phylostratum\n",$profile,"\n",$profile($collapse_idx:$profile->nelem-1)->flat->sum,"\n","N $N n $n R $R r $r z ",hygeometric_dist_z_score($N,$n,$R,$r);;
+#        getc;
+        
+    }
+
     $out_string_z_score .= "$set\t" . join "\t", @z_scores;
     $out_string_z_score .= "\n";
     $out_string_sets .= "$set\t" . join "\t", $profile->list;
+    if (defined $collapse){
+        $out_string_sets .= "\t" . $profile($collapse_idx:$profile->nelem-1)->flat->sum;
+    }
     $out_string_sets .= "\n";
 }
 print_OUT("    ... done ...");
@@ -156,6 +192,9 @@ Comments, suggestions or complains you be addressed to IntiPedroso@gmail.com
  
     Output
     -out, --o      Name of output files
+ 
+    Additional Options
+    -collapse, -s   Collapse counts of phylostratums. Need to provide id of phylostratum after which to collaps the counts.
 
 
 =head1 OPTIONS
@@ -181,6 +220,10 @@ Comments, suggestions or complains you be addressed to IntiPedroso@gmail.com
 =item B<-o, --out>
 
     Name of output file
+ 
+=intem B<-collapse, -s>
+ 
+ Collapse counts of phylostratums. Need to provide id of phylostratum after which to collaps the counts.
 
 =back
 
