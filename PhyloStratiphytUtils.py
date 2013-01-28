@@ -11,6 +11,25 @@ from Bio import SeqIO
 from cogent.parse.ncbi_taxonomy import NcbiTaxonomyFromFiles
 
 
+# map sequence search query sequences to the oldest LCA with eny of the hits passing the e-value threshold
+def map_to_oldest_stratum(data,evalue_threshold=1e-3):
+    data = data.ix[data['evalue'] <= evalue_threshold]
+    grouped = data.groupby('query_id')
+    back = grouped.apply(get_oldest_hit)
+    return back
+
+# rounting to get the oldest of the hits from the table. It is based on the rank of the phylostratum and assumes that lowest rank means oldest
+def get_oldest_hit(data):
+    where_lowest = data['lca_rank'] == min(data['lca_rank'])
+    back = list( set(data.ix[ where_lowest  ,'lca_name']) )[0]
+    return back
+
+# returns a summary wit the number of genes mapped to each phylostratum
+def count_genes_per_phylostrata(data):
+    counts = pd.DataFrame(data.values,columns=['phylostratum'],index = data.index).groupby('phylostratum').size()
+    return counts
+
+
 # Load species tree from NCBI Taxonomy
 def load_ncbi_taxonomy_tree(nodes,names):
     print return_time(), "Reading NBCI Taxonomy files"
