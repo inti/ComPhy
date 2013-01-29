@@ -49,7 +49,11 @@ def load_gi_taxid_mapping(file,table,chunk_size=10000,compression = 'gzip',filte
         how_filter = 'outer'
 
     print return_time(), "   '-> Matching blast results GIs with sequences Taxonomy Ids and filtering blast result table"
-    tmp_table = pd.concat([pd.merge(table,chunk,left_on='subject_gi', right_on='gi',how=how_filter) for chunk in gi_2_taxid], ignore_index=True)
+    tmp_table = [ pd.merge(table,chunk,left_on='subject_gi', right_on='gi',how=how_filter) for chunk in gi_2_taxid ]
+    print "TYPE: ",type(tmp_table)
+    #tmp_table = pd.concat(tmp_table , ignore_index=True)
+    new = pd.DataFrame(columns=table.columns)
+    tmp_table = new.append(tmp_table)# , ignore_index=True)
     if filter == 'true':
             end_size = len(tmp_table)
             if len(tmp_table) == 0:
@@ -137,7 +141,7 @@ def get_lineage(node,tree,value = 'name'):
 
 # provide two lineages and return their last common ancestor
 def get_lca(lineage1,lineage2):
-    for i in range(1,len(lineage1)):
+    for i in range(0,len(lineage1)):
         if lineage1[-i] != lineage2[-i]:
             lca = lineage1[-(i - 1)]
             return [lca,i-1]
@@ -159,9 +163,9 @@ def get_lca_for_list(coming_in,tree,ref_species_id=9606):
                 continue
 
             sbj_node_lineage = get_lineage(sbj_node,tree,'id')
+            #print ref_node.Name," :: ", sbj_node.Name, "\n",sbj_node_lineage,"\n",ref_lineage
             qry_sbj_lca_id, qry_sbj_lca_rank = get_lca(ref_lineage,sbj_node_lineage)
             qry_sbj_lca_node = tree.ById[qry_sbj_lca_id]
-            #print ref_node.Name," :: ", sbj_node.Name, " => ", qry_sbj_lca_node.Name," <=\n",sbj_node_lineage,"\n",ref_lineage
             back[number] = [sbj_node.Name, number, qry_sbj_lca_node.Name, qry_sbj_lca_id,qry_sbj_lca_rank]
     back = pd.DataFrame(back.values(), columns=['subject_name','subject_taxid','lca_name','lca_tax_id','lca_rank'])
     print return_time(), "   ... done"

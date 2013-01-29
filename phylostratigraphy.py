@@ -13,8 +13,8 @@ file2 = 'example/dysbindin.blast_out.txt'
 file3 = 'dmel-all-translation-r5.44.fasta.nr.e10.sw.txt_50k_nohash'
 table = load_blast_results(file3)
 
-sequence_length = read_fasta_seqs('example/dysbindin.fa')
-table = filter_table_by_ids(table,sequence_length.keys())
+#sequence_length = read_fasta_seqs('example/dysbindin.fa')
+#table = filter_table_by_ids(table,sequence_length.keys())
 
 table = load_gi_taxid_mapping('gi_taxid_prot.dmp.gz',table)
 #table = load_gi_taxid_mapping('head.txt.gz',table)
