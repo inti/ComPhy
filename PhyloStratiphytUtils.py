@@ -49,11 +49,12 @@ def load_gi_taxid_mapping(file,table,chunk_size=10000,compression = 'gzip',filte
         how_filter = 'outer'
 
     print return_time(), "   '-> Matching blast results GIs with sequences Taxonomy Ids and filtering blast result table"
+    print return_time(), "   ... selecting ids for sequences present on blast output"
     tmp_table = [ pd.merge(table,chunk,left_on='subject_gi', right_on='gi',how=how_filter) for chunk in gi_2_taxid ]
-    print "TYPE: ",type(tmp_table)
-    #tmp_table = pd.concat(tmp_table , ignore_index=True)
-    new = pd.DataFrame(columns=table.columns)
-    tmp_table = new.append(tmp_table)# , ignore_index=True)
+    print return_time(), "   ... combining all results"
+    tmp_table = pd.concat(tmp_table , ignore_index=True)
+    #new = pd.DataFrame(columns=table.columns)
+    #tmp_table = new.append(tmp_table)# , ignore_index=True)
     if filter == 'true':
             end_size = len(tmp_table)
             if len(tmp_table) == 0:
