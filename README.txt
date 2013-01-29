@@ -22,4 +22,5 @@
 	Inti Pedroso: IntiPeroso@gmail.com
 
 * References
+	Pedroso I, Brown MJF, Sumner S. Detecting gene innovations for phenotypic diversity across multiple genomes. http://arxiv.org/abs/1212.3827
 	Domazet-Loso, T., and Tautz, D. (2003). An evolutionary analysis of orphan genes in Drosophila. Genome Res. 13, 2213-2219.
