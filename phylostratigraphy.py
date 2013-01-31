@@ -2,31 +2,40 @@
 #opt/local/bin/python2.7
 
 from PhyloStratiphytUtils import *
+from TreeTaxonomyUtils import *
 import pandas as pd
 
 d_mell_taxid = 7227
 h_sapiens_taxid = 9606
+evalue_cutoff = 1e-3
+ref_species = d_mell_taxid
+
+# Load taxonomy information
+tax_nodes, tax_names = load_ncbi_tax_files('ncbi_tax_data/nodes.dmp','ncbi_tax_data/names.dmp')
+
+
+#h5_store = store_gi_to_taxid_mapping_to_h5(gi2taxid='gi_taxid_prot.dmp.gz')
+#gi_2_taxid_table = h5_store.root.gi_2_taxid.table
+
 
 ## Read blast output results
 file1 = 'example/blastp_Pbar_ant_vs_nr_e10.txt_nohash'
-file2 = 'example/dysbindin.blast_out.txt'
-file3 = 'dmel-all-translation-r5.44.fasta.nr.e10.sw.txt_50k_nohash'
-table = load_blast_results(file3)
+file2 = 'dysbindin.blast_out.txt_nohash'
+file3 = 'dmel-all-translation-r5.44.fasta.nr.e10.sw.txt_nohash'
+table = load_blast_results(file1,evalue_limit=evalue_cutoff)
 
-#sequence_length = read_fasta_seqs('example/dysbindin.fa')
-#table = filter_table_by_ids(table,sequence_length.keys())
+#add_tax_id(table,gi_2_taxid_table)
+load_gi_taxid_mapping('gi_taxid_prot.dmp.gz',table)
 
-table = load_gi_taxid_mapping('gi_taxid_prot.dmp.gz',table)
-#table = load_gi_taxid_mapping('head.txt.gz',table)
-
-tree = load_ncbi_taxonomy_tree('/Users/inti/Installed_Apps/biosql/scripts/taxdata/nodes.dmp','/Users/inti/Installed_Apps/biosql/scripts/taxdata/names.dmp')
-
-lcas = get_lca_for_list(list(set(table['taxid'])),tree,ref_species_id=7227)
+# identify LCA of ref specie with every specie with a sequence search hit
+lcas = get_lca_for_list(list(set(table['taxid'])),tax_nodes,tax_names,ref_species_id=ref_species)
 table = pd.merge(table,lcas,left_on='taxid',right_on='subject_taxid', how='inner')
 
+# map each query sequence to the oldest LCA with the target species
 table_mrca = map_to_oldest_stratum(table)
-phylostratum_counts = count_genes_per_phylostrata(table_mrca)
-
+# count number of genes by phylostrata
+phylostratum_counts = count_genes_per_phylostrata(table_mrca,ref_species_id=ref_species)
+c = count_genes_per_phylostrata(table_mrca,tax_nodes,tax_names,ref_species_id=ref_species)
 
 
 exit(0)
