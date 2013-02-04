@@ -8,21 +8,46 @@ import datetime
 import pandas as pd
 import numpy as np
 import os.path
+import TreeTaxonomyUtils as ttutils
+import progressbar 
+from tables import *
 from Bio import SeqIO
 from cogent.parse.ncbi_taxonomy import NcbiTaxonomyFromFiles
 
 
-def make_gi_tp_taxonomy_hd5_file(gi2taxid):
+def add_taxid_from_h5file(table,file):
+    filename = file
+    print return_time(), "Reading HDF5 file with GI to TaxIds file [",file,"]"
+    h5file = pd.HDFStore(file, mode = "r")
+    unique_gi = pd.unique(table['subject_gi'])
+    n_unique_gi = len(unique_gi)
+    print return_time(), "   ... [",n_unique_gi,"] GIs to search for"
+    pbar = progressbar.ProgressBar(maxval=n_unique_gi, term_width=50,widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()]).start()
+    i = 0
+    for sbj_gi in unique_gi:
+        i = i+1
+        pbar.update(i)
+        taxid = h5file.root.gi_2_taxid.table.readWhere('(gi == sbj_gi)')
+        if len(taxid) > 0:
+            taxid = taxid[0][2]
+            table.ix[table['subject_gi'] == sbj_gi,'taxid' ] = taxid
+    pbar.finish()
+
+    print return_time(), "   ... found TaxIds for [",len(pd.unique(table.ix[table['taxid'] > 0,'taxid'])),"] GIs"
+    print return_time(), "   ... assigned TaxIds to [",len(table.ix[table['taxid'] > 0])," out of [",len(table),"] sequence search results"
+    print return_time(), "   ... done"
+
+
+def make_gi_tp_taxonomy_hd5_file(gi2taxid,store_file):
     print return_time(), "Reading GIs to TaxIds file and storing data onto [",store_file,"]"
     hd_store =  pd.HDFStore(store_file)
     gi_2_taxid = pd.read_table(gi2taxid, chunksize=1000000,compression='gzip',header=None,sep="\t",names=['gi','taxid'])
     for chunk in gi_2_taxid:
         hd_store.append('gi_2_taxid', chunk,data_columns=True)
     print "   ... done"
+    return hd_store
 
-
-
-def store_gi_to_taxid_mapping_to_h5(gi2taxid, store_file='gi_taxid_prot.dmp.h5', close=False,override=False):
+def store_gi_to_taxid_mapping_to_h5(gi2taxid, store_file='gi_taxid.h5', close=False,override=False):
     if os.path.exists(store_file):
         print return_time(), "HDF5 file exists"
         if override == False:
@@ -30,8 +55,10 @@ def store_gi_to_taxid_mapping_to_h5(gi2taxid, store_file='gi_taxid_prot.dmp.h5',
             hd_store = pd.HDFStore(store_file)
         else:
             print return_time(), "   ... will override file [",store_file,"]"
+            hd_store = make_gi_tp_taxonomy_hd5_file(gi2taxid,store_file)
+
     else:
-        make_gi_tp_taxonomy_hd5_file(gi2taxid)
+        hd_store = make_gi_tp_taxonomy_hd5_file(gi2taxid,store_file)
 
     if close == True:
         print return_time(), "   ... done"
@@ -66,8 +93,8 @@ def get_oldest_hit(data):
 def count_genes_per_phylostrata(data,nodes_table, names_table, ref_species_id=9606):
     print return_time(), "Counting genes assign to each phylostrata"
     print return_time(), "   ... finding reference specie taxonomy"
-    ref_lineage = find_lineage_ById( ref_species_id, nodes_table)
-    ref_lineage_names = get_names_for_list_ById(ref_lineage,names_table)
+    ref_lineage = ttutils.find_lineage_ById( ref_species_id, nodes_table)
+    ref_lineage_names = ttutils.get_names_for_list_ById(ref_lineage,names_table)
     print return_time(), "   ... counting genes mapped to each ancestor of ref specie"
     counts = pd.DataFrame(data.values,columns=['phylostratum'],index = data.index).groupby('phylostratum').size()
     print return_time(), "   ... done"
@@ -132,7 +159,7 @@ def load_blast_results(file,format='blastp_table',evalue_limit=1e-3):
         #table = table[table['query_id'].isin(sequence_length.keys()) ]
         table['subject_gi'] = table['subject_id'].str.split('|').apply(lambda x: x[1])
         table['subject_gi']=table['subject_gi'].astype(np.int64)
-        table.index = table['subject_gi']
+        #table.index = table['subject_gi']
         print return_time(), "   ... done"
         return table
 

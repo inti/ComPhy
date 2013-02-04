@@ -5,22 +5,22 @@ __version__ = '0.01'
 
 import pandas as pd
 import numpy as np
-from PhyloStratiphytUtils import return_time
+import PhyloStratiphytUtils as psutils
 
 def my_strip(text):
     try:
-        return text.strip(' \t')
+         return text.strip(' \t')
     except AttributeError:
         return text
 
 # wrapper over funtions to read files
 def load_ncbi_tax_files(nodes_file,names_file):
-    print return_time(), "Reading NCBI Taxonomy file"
-    print return_time(), "   ... [", nodes_file,"]"
+    print psutils.return_time(), "Reading NCBI Taxonomy file"
+    print psutils.return_time(), "   ... [", nodes_file,"]"
     nodes_table = read_nodes_file(nodes_file)
-    print return_time(), "   ... [", names_file,"]"
+    print psutils.return_time(), "   ... [", names_file,"]"
     names_table = read_names_file(names_file)
-    print return_time(), "   ... done"
+    print psutils.return_time(), "   ... done"
     return [ nodes_table, names_table ]
 
 
@@ -94,7 +94,7 @@ def get_lca(lineage1,lineage2):
 
 # for a list of ids it returns the last common ancestor (and additional information) between the taxid on the list and a refid.
 def get_lca_for_list(coming_in,nodes_table,names_table,ref_species_id=9606):
-    print return_time(), "Identifying last common ancestor between query specie and blast hits"
+    print psutils.return_time(), "Identifying last common ancestor between query specie and blast hits"
     back = {}
     ref_lineage = find_lineage_ById( ref_species_id, nodes_table)
     ref_species_name = get_name_ById( ref_species_id, names_table)
@@ -114,7 +114,7 @@ def get_lca_for_list(coming_in,nodes_table,names_table,ref_species_id=9606):
             back[sbj_taxid] = [sbj_name, sbj_taxid, qry_sbj_lca_name, qry_sbj_lca_id,qry_sbj_lca_rank]
 
     back = pd.DataFrame(back.values(), columns=['subject_name','subject_taxid','lca_name','lca_tax_id','lca_rank'])
-    print return_time(), "   ... done"
+    print psutils.return_time(), "   ... done"
     return back
 
 
