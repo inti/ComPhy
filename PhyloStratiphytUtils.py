@@ -126,6 +126,8 @@ def count_genes_per_phylostrata(data,nodes_table, names_table, ref_species_id=96
     print return_time(), "   ... counting genes mapped to each ancestor of ref specie"
     counts = pd.DataFrame(data.values,columns=['phylostratum'],index = data.index).groupby('phylostratum').size()
     counts = counts.reindex(ref_lineage_names,fill_value=0)
+    ranks = range(len(ref_lineage_names) - 1,-1,-1)
+    counts = pd.DataFrame({'phylostratum':counts,'rank':ranks},index = ref_lineage_names)
     print return_time(), "   ... done"
     return counts
 
