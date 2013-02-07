@@ -22,13 +22,10 @@ tax_nodes, tax_names = ttutils.load_ncbi_tax_files('ncbi_tax_data/nodes.dmp','nc
 file1 = 'example/blastp_Pbar_ant_vs_nr_e10.txt_nohash'
 file2 = 'dysbindin.blast_out.txt_nohash'
 file3 = 'dmel-all-translation-r5.44.fasta.nr.e10.sw.txt_nohash'
-table = psutils.load_blast_results(file2,evalue_limit=evalue_cutoff)
+table = psutils.load_blast_results(file1,evalue_limit=evalue_cutoff)
 
 psutils.store_gi_to_taxid_mapping_to_h5(gi2taxid='gi_taxid_prot.dmp.gz',store_file='gi_taxid.h5', close=True,override=False)
 df_unique_gi = psutils.add_taxid_from_h5file(table = table,file = 'gi_taxid.h5')
-#table=table.ix[table['taxid']>0]
-#add_tax_id(table,gi_2_taxid_table)
-#load_gi_taxid_mapping('gi_taxid_prot.dmp.gz',table)
 
 # identify LCA of ref specie with every specie with a sequence search hit
 lcas = ttutils.get_lca_for_list(list(set(df_unique_gi['taxid'])),tax_nodes,tax_names,ref_species_id=ref_species)

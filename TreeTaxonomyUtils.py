@@ -94,6 +94,9 @@ def get_lca_for_list(coming_in,nodes_table,names_table,ref_species_id=9606):
     ref_lineage = {ref_lineage[i]: i   for i in xrange(len(ref_lineage))}
     lca_stack = {}
     inner_nodes_lca_stack = {}
+    for ancestor in ref_lineage:
+        inner_nodes_lca_stack[ancestor] = ancestor
+    
     pbar = progressbar.ProgressBar(maxval=len(coming_in)+1, term_width=50,widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()]).start()
     i=0
     for sbj_taxid in coming_in:
@@ -108,12 +111,18 @@ def get_lca_for_list(coming_in,nodes_table,names_table,ref_species_id=9606):
             continue
 
         parent_id = np.int64(sbj_taxid)
+        lineage = []
+        lineage.append(sbj_taxid)
         while parent_id > 1:
             parent_id = nodes_table.ix[ nodes_table['taxid'] == parent_id ,"parent_tax_id"]
             parent_id = np.int64(parent_id)
             if not parent_id:
                 break
+
+            lineage.append(parent_id)
             if parent_id == 10239: # if this sequence is a virus
+                for viral_ancestor in lineage:
+                    inner_nodes_lca_stack[viral_ancestor] = 'virus'
                 break
     
             if parent_id in ref_lineage.keys():
@@ -121,16 +130,23 @@ def get_lca_for_list(coming_in,nodes_table,names_table,ref_species_id=9606):
                 lca_name = get_name_ById(parent_id,names_table)
                 lca_rank = ref_lineage[parent_id]
                 lca_stack[sbj_taxid] = { 'subject_name' : subject_name , 'subject_taxid': sbj_taxid, 'lca_name': lca_name, 'lca_tax_id': parent_id, 'lca_rank' : lca_rank }
+                for ancestor in lineage:
+                    inner_nodes_lca_stack[ancestor] = parent_id
                 break
 
             if parent_id in inner_nodes_lca_stack.keys():
-                sister_specie = inner_nodes_lca_stack[ parent_id ]
-                sister_specie_lca = lca_stack[ sister_specie ]
+                lca_tax_id = inner_nodes_lca_stack[ parent_id ]
+                if lca_tax_id == 'virus':
+                    for viral_ancestor in lineage:
+                        inner_nodes_lca_stack[ viral_ancestor ] = 'virus'
+                    break
+                    
                 subject_name = get_name_ById(sbj_taxid,names_table)
-                lca_stack[sbj_taxid] = { 'subject_name' : subject_name , 'subject_taxid': sbj_taxid, 'lca_name': sister_specie_lca['lca_name'], 'lca_tax_id': sister_specie_lca['lca_tax_id'], 'lca_rank' : sister_specie_lca['lca_rank'] }
+                lca_name = get_name_ById(lca_tax_id,names_table)
+                lca_stack[sbj_taxid] = { 'subject_name' : subject_name , 'subject_taxid': sbj_taxid, 'lca_name': lca_name, 'lca_tax_id': lca_tax_id, 'lca_rank' : len(ref_lineage) - len(lineage) }
+                for ancestor in lineage:
+                    inner_nodes_lca_stack[ancestor] = lca_tax_id
                 break
-            else:
-                inner_nodes_lca_stack[parent_id]= sbj_taxid
 
     pbar.finish()
     lca_stack = pd.DataFrame(lca_stack).T
