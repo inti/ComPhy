@@ -14,8 +14,36 @@ from tables import *
 from Bio import SeqIO
 from cogent.parse.ncbi_taxonomy import NcbiTaxonomyFromFiles
 
-
 def add_taxid_from_h5file(table,file):
+    print return_time(), "Reading HDF5 file with GI to TaxIds file [",file,"]"
+    h5file = pd.HDFStore(file, mode = "r")
+    table_grouped = table.groupby('subject_gi')
+    df_unique_gi = pd.DataFrame(table_grouped.groups.keys(),columns = ['subject_gi'])
+    n_unique_gi = table_grouped.ngroups
+    print return_time(), "   ... [",n_unique_gi,"] GIs to search for"
+    b_chunk_size = 1000000
+    nrows_b = h5file.root.gi_2_taxid.table.nrows
+    df_lot = []
+    pbar = progressbar.ProgressBar(maxval=nrows_b+1, term_width=50,widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()]).start()
+    for b in xrange(int(nrows_b / b_chunk_size) + 1):
+        b_start_i = b * b_chunk_size
+        b_stop_i = min((b + 1) * b_chunk_size, nrows_b)
+        
+        B = h5file.select('gi_2_taxid', start = b_start_i, stop = b_stop_i)
+        intersection = df_unique_gi.ix[ df_unique_gi['subject_gi'].isin( B['gi'] ),'subject_gi']
+        if len(intersection) > 0:
+            df_lot.append(pd.merge(df_unique_gi,B,left_on='subject_gi',right_on='gi',how='inner'))
+        pbar.update(b_stop_i-1)
+    pbar.finish()
+    df_unique_gi = pd.concat(df_lot)
+    print return_time(), "   ... found TaxIds for [",len(df_unique_gi),"] GIs"
+    print return_time(), "   ... done"
+    return df_unique_gi
+
+def set_taxid(gi,taxid):
+    table.ix[table_grouped.groups[gi],'taxid']=taxid
+
+def add_taxid_from_h5file_old(table,file):
     filename = file
     print return_time(), "Reading HDF5 file with GI to TaxIds file [",file,"]"
     h5file = pd.HDFStore(file, mode = "r")
@@ -158,7 +186,7 @@ def load_blast_results(file,format='blastp_table',evalue_limit=1e-3):
         # reduce the blast output only to the sequences present on the fasta file
         #table = table[table['query_id'].isin(sequence_length.keys()) ]
         table['subject_gi'] = table['subject_id'].str.split('|').apply(lambda x: x[1])
-        table['subject_gi']=table['subject_gi'].astype(np.int64)
+        table['subject_gi'] = table['subject_gi'].astype(np.int64)
         #table.index = table['subject_gi']
         print return_time(), "   ... done"
         return table
