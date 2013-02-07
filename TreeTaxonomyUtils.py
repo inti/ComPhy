@@ -6,6 +6,7 @@ __version__ = '0.01'
 import pandas as pd
 import numpy as np
 import PhyloStratiphytUtils as psutils
+import progressbar
 
 def my_strip(text):
     try:
@@ -52,7 +53,8 @@ def find_lineage_ById(taxid,nodes_table):
     parent_id = taxid
     while parent_id > 1:
         parent_id = nodes_table.ix[ nodes_table['taxid'] == parent_id ,"parent_tax_id"]
-        parent_id = np.int64(parent_id.values[0])
+#        parent_id = np.int64(parent_id.values[0])
+        parent_id = np.int64(parent_id)
         lineage.append(parent_id)
     return lineage
 
@@ -85,6 +87,56 @@ def get_names_for_list_ById(id_list, names_table):
     return all_names
 
 # provide two lineages and return their last common ancestor
+
+def get_lca_for_list(coming_in,nodes_table,names_table,ref_species_id=9606):
+    print psutils.return_time(), "Identifying last common ancestor between query specie and blast hits"
+    ref_lineage = find_lineage_ById( ref_species_id, nodes_table)
+    ref_lineage = {ref_lineage[i]: i   for i in xrange(len(ref_lineage))}
+    lca_stack = {}
+    inner_nodes_lca_stack = {}
+    pbar = progressbar.ProgressBar(maxval=len(coming_in)+1, term_width=50,widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()]).start()
+    i=0
+    for sbj_taxid in coming_in:
+        pbar.update(i)
+        i = i + 1
+        if np.isnan(sbj_taxid):
+            continue
+    
+        if ref_species_id == sbj_taxid:
+            subject_name = get_name_ById(sbj_taxid,names_table)
+            lca_stack[sbj_taxid] = { 'subject_name' : subject_name , 'subject_taxid': sbj_taxid, 'lca_name': subject_name, 'lca_tax_id': sbj_taxid, 'lca_rank' : len(ref_lineage) }
+            continue
+
+        parent_id = np.int64(sbj_taxid)
+        while parent_id > 1:
+            parent_id = nodes_table.ix[ nodes_table['taxid'] == parent_id ,"parent_tax_id"]
+            parent_id = np.int64(parent_id)
+            if not parent_id:
+                break
+            if parent_id == 10239: # if this sequence is a virus
+                break
+    
+            if parent_id in ref_lineage.keys():
+                subject_name = get_name_ById(sbj_taxid,names_table)
+                lca_name = get_name_ById(parent_id,names_table)
+                lca_rank = ref_lineage[parent_id]
+                lca_stack[sbj_taxid] = { 'subject_name' : subject_name , 'subject_taxid': sbj_taxid, 'lca_name': lca_name, 'lca_tax_id': parent_id, 'lca_rank' : lca_rank }
+                break
+
+            if parent_id in inner_nodes_lca_stack.keys():
+                sister_specie = inner_nodes_lca_stack[ parent_id ]
+                sister_specie_lca = lca_stack[ sister_specie ]
+                subject_name = get_name_ById(sbj_taxid,names_table)
+                lca_stack[sbj_taxid] = { 'subject_name' : subject_name , 'subject_taxid': sbj_taxid, 'lca_name': sister_specie_lca['lca_name'], 'lca_tax_id': sister_specie_lca['lca_tax_id'], 'lca_rank' : sister_specie_lca['lca_rank'] }
+                break
+            else:
+                inner_nodes_lca_stack[parent_id]= sbj_taxid
+
+    pbar.finish()
+    lca_stack = pd.DataFrame(lca_stack).T
+    print psutils.return_time(), "   ... done"
+    return lca_stack
+
 def get_lca(lineage1,lineage2):
     for i in range(1,1+len(lineage1)):
         if lineage1[-i] != lineage2[-i]:
@@ -93,7 +145,7 @@ def get_lca(lineage1,lineage2):
             break
 
 # for a list of ids it returns the last common ancestor (and additional information) between the taxid on the list and a refid.
-def get_lca_for_list(coming_in,nodes_table,names_table,ref_species_id=9606):
+def get_lca_for_list_old(coming_in,nodes_table,names_table,ref_species_id=9606):
     print psutils.return_time(), "Identifying last common ancestor between query specie and blast hits"
     back = {}
     ref_lineage = find_lineage_ById( ref_species_id, nodes_table)
