@@ -39,5 +39,5 @@ table = pd.merge(table,lcas,on='subject_gi', how='inner')
 table_mrca = psutils.map_to_oldest_stratum(table)
 # count number of genes by phylostrata
 phylostratum_counts = psutils.count_genes_per_phylostrata(table_mrca,tax_nodes, tax_names,ref_species_id=ref_species)
-
+print phylostratum_counts
 
