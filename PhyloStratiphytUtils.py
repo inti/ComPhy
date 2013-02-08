@@ -9,7 +9,8 @@ import pandas as pd
 import numpy as np
 import os.path
 import TreeTaxonomyUtils as ttutils
-import progressbar 
+import progressbar
+import random
 from tables import *
 from Bio import SeqIO
 from cogent.parse.ncbi_taxonomy import NcbiTaxonomyFromFiles
@@ -194,6 +195,33 @@ def load_blast_results(file,format='blastp_table',evalue_limit=1e-3):
         print return_time(), "   ... done"
         return table
 
+
+
+def bootstrap(table,B=3,lineage=None):
+    table_grouped = table.groupby('query_id')
+    b = []
+    pbar = progressbar.ProgressBar(maxval=B+1, term_width=50,widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()]).start()
+    for i in xrange(B):
+        sample=table_grouped.apply(lambda x: resample(x))
+        sample_mrca = map_to_oldest_stratum(sample.reset_index(drop=True))
+        counts = pd.DataFrame(sample_mrca.values,columns=['phylostratum']).groupby('phylostratum').size()
+        b.append(counts)
+        pbar.update(i)
+    pbar.finish()
+    b = pd.DataFrame(b).T
+    if lineage != None:
+        b = b.reindex_axis(lineage,axis=0)
+    b=b.fillna(0)
+    idx = b.index
+    b = b.apply(lambda x: np.percentile(x,[2.5,15.89,50.0,84.1,97.5]),axis=1)
+    b=pd.DataFrame([tuple(row) for row in b],index=b.index,columns=["q2.5","q15.89","q50.0","q84.1","q97.5"])
+    return b
+
+def resample(data):
+    n = len(data)
+    idx = data.index
+    rdn_idx = [random.choice(idx) for i in range(len(idx))]
+    return data.ix[rdn_idx]
 
 # function to print out a string
 def print_OUT(x):
