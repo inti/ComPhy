@@ -36,10 +36,13 @@ print phylostratum_counts
 b = psutils.bootstrap(table,B=100)
 
 
+phylostratum_counts = phylostratum_counts.join(b).fillna(0)
 
-fig = plt.figure()
-ax = fig.add_subplot(111)
-#ax.plot(phylostratum_counts['rank'],phylostratum_counts['phylostratum'])
-ax.errorbar(phylostratum_counts['rank'],phylostratum_counts['phylostratum'],yerr=b[['q2.5','q97.5']].values)
-plt.show()
+from matplotlib import pylab as plt
+
+plt.errorbar(phylostratum_counts['rank'],phylostratum_counts['phylostratum'],yerr=[phylostratum_counts['q2.5'].values,phylostratum_counts['q97.5'].values]);
+plt.xticks(phylostratum_counts['rank'],phylostratum_counts.index,rotation=90)
+plt.tight_layout()
+plt.save('fig.png')
+#plt.show()
 
