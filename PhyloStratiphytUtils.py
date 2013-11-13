@@ -69,7 +69,7 @@ def add_taxid_from_h5file_old(table,file):
 
 def make_gi_tp_taxonomy_hd5_file(gi2taxid,store_file):
     print return_time(), "Reading GIs to TaxIds file and storing data onto [",store_file,"]"
-    hd_store =  pd.HDFStore(store_file)
+    hd_store =  pd.HDFStore(store_file, complevel=9, complib='blosc')
     gi_2_taxid = pd.read_table(gi2taxid, chunksize=1000000,compression='gzip',header=None,sep="\t",names=['gi','taxid'])
     for chunk in gi_2_taxid:
         hd_store.append('gi_2_taxid', chunk,data_columns=True)
@@ -81,7 +81,7 @@ def store_gi_to_taxid_mapping_to_h5(gi2taxid, store_file='gi_taxid.h5', close=Fa
         print return_time(), "HDF5 file exists"
         if override == False:
             print return_time(), "   ... reading HDF5 file [",store_file,"]"
-            hd_store = pd.HDFStore(store_file)
+            hd_store = pd.HDFStore(store_file, complevel=9, complib='blosc')
         else:
             print return_time(), "   ... will override file [",store_file,"]"
             hd_store = make_gi_tp_taxonomy_hd5_file(gi2taxid,store_file)
