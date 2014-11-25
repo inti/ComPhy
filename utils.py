@@ -74,7 +74,7 @@ class phylostatigraphy():
 						.apply(lambda x: np.sum(x))\
 						.reset_index()\
 						.sort("lca_ranks",ascending=1)\
-						.set_index(["lca_binomial_name","lca_ranks"]).T
+						.set_index(["lca_binomial_name","lca_ranks"]).T.fillna(0)
 
 #ps = phylostatigraphy(ref_specie=9606,alns="example/dysbindin.blast_out.txt")
 ps = phylostatigraphy(ref_specie=144034,alns="example/blastp_Pbar_ant_vs_nr_e10.txt")
