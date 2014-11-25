@@ -1,3 +1,8 @@
+import PhyloStratiphytUtils as psutils
+import TreeTaxonomyUtils as ttutils
+import pandas as pd
+import numpy as np
+
 class phylostatigraphy():
 	def __init__(self,ref_specie,alns,evalue_limit=1e-6,h5_file="gi_taxid.h5"):
 		from ete_dev import  ncbiquery
@@ -32,9 +37,13 @@ class phylostatigraphy():
 	
 	def _get_unique_subject_gi(self):
 		self.df_subject_taxid = psutils.add_taxid_from_h5file(table = self.alignments_table,file = self.h5_file)
+		self.df_subject_taxid = self.df_subject_taxid[ self.df_subject_taxid.taxid >0 ]
 
 	def _get_subjects_lineages(self):
-		self._subject_lineages = [self.get_sp_lineage(taxon) for taxon in self.df_subject_taxid.taxid.unique()]
+		self._subject_lineages = [ self.get_sp_lineage(taxon) for taxon in self.df_subject_taxid.taxid.unique() ]
+		where_is_none = np.where([lineage == None for lineage in self._subject_lineages])[0]
+		if np.sum(where_is_none) > 0:
+			self._subject_lineages = np.delete(self._subject_lineages, where_is_none )
 		
 	def _get_lca_ete2(self,lineage1,lineage2):
 		lca = -1
@@ -61,10 +70,14 @@ class phylostatigraphy():
 						rows=["query_id"],
 						cols=["lca_binomial_name","lca_ranks","subject_binomial_name"],
 						values="bit_score",aggfunc=np.sum)\
-						.T.groupby(level=[0,1]).apply(lambda x: np.sum(x)).T
+						.T.groupby(level=[0,1])\
+						.apply(lambda x: np.sum(x))\
+						.reset_index()\
+						.sort("lca_ranks",ascending=1)\
+						.set_index(["lca_binomial_name","lca_ranks"]).T
 
-
-ps = phylostatigraphy(ref_specie=9606,alns="example/dysbindin.blast_out.txt")
+#ps = phylostatigraphy(ref_specie=9606,alns="example/dysbindin.blast_out.txt")
+ps = phylostatigraphy(ref_specie=144034,alns="example/blastp_Pbar_ant_vs_nr_e10.txt")
 ps.pipeline()
 ps.score_table()
 
