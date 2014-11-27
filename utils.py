@@ -32,6 +32,11 @@ class phylostatigraphy():
 		# get LCAs
 		self._get_lcas()
 			
+		self.score_table()
+		self.score_weight_table()
+		self.phyloStrat_profile()
+
+
  	def _get_aln_results(self):
 		self.alignments_table = psutils.load_blast_results(self.alignments,evalue_limit=self.alignments_evalue_limit)
 	
@@ -75,6 +80,53 @@ class phylostatigraphy():
 						.reset_index()\
 						.sort("lca_ranks",ascending=1)\
 						.set_index(["lca_binomial_name","lca_ranks"]).T.fillna(0)
+	def score_weight_table(self):
+		self.ps_prot_wise_W_scores = self.ps_prot_wise_scores.apply(lambda x: x/np.sum(x),axis=1) 
+
+	
+	def phyloStrat_profile(self,table,bootstrap=0,b_fraction=0.9,agg_func="sum",b_n=0):
+		self.phyloStrat_profile = table.sum(axis=0)/table.shape[0]
+		self.phyloStrat_profile = self.phyloStrat_profile.reset_index(name="phyloStrat_sum")
+		if bootstrap > 0:
+                        nrow,ncol = (table.shape)
+			if b_n > 0:
+				if b_n > nrow: 
+					print "sorry you want to leave out all the data set!! b_n > nrows"
+					return -1
+				else:
+					b_fraction= 1.0 - np.ceil(1000*float(b_n)/nrow)/1000
+					if b_fraction == 1:
+						 b_fraction=1.0 - np.floor(1000*float(b_n)/nrow)/1000
+			print "Resampling ", bootstrap, "time the", b_fraction,"fraction of the data."
+			B = pd.DataFrame(np.zeros((bootstrap,ncol)))
+			for i in xrange(bootstrap):
+				B.ix[i,:] = self._bootstrap_table(table,fraction=b_fraction,agg_func=agg_func)
+			B /= nrow
+			self.phyloStrat_profile.ix[:,"phyloStrat_boot_mean"]   = B.mean(axis=0).values
+			self.phyloStrat_profile.ix[:,"phyloStrat_boot_q2_5"]   = np.percentile(B,2.5,axis=0)
+                        self.phyloStrat_profile.ix[:,"phyloStrat_boot_q15_89"] = np.percentile(B,15.89,axis=0)
+                        self.phyloStrat_profile.ix[:,"phyloStrat_boot_q50"]    = np.percentile(B,50.0,axis=0)
+                        self.phyloStrat_profile.ix[:,"phyloStrat_boot_q84_1"]  = np.percentile(B,84.1,axis=0)
+                        self.phyloStrat_profile.ix[:,"phyloStrat_boot_q97_5"]  = np.percentile(B,97.5,axis=0)
+
+
+
+	def _bootstrap_table(table,fraction=0.8,agg_func="sum"):
+		nrow,ncol = (table.shape)
+		back = np.zeros((1,ncol))
+		n_sampled = 0
+		for i in xrange(nrow):
+			if np.random.uniform() < fraction:
+				back += table.ix[i,:].values 
+				n_sampled += 1
+
+		if agg_func == "mean":
+			back /= n_sampled
+		return back
+
+
+
+
 
 #ps = phylostatigraphy(ref_specie=9606,alns="example/dysbindin.blast_out.txt")
 ps = phylostatigraphy(ref_specie=144034,alns="example/blastp_Pbar_ant_vs_nr_e10.txt")
