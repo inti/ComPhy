@@ -34,7 +34,7 @@ class phylostatigraphy():
 			
 		self.score_table()
 		self.score_weight_table()
-		self.phyloStrat_profile()
+		self.phyloStrat_profile(self.ps_prot_wise_W_scores,bootstrap=500)
 
 
  	def _get_aln_results(self):
@@ -84,7 +84,7 @@ class phylostatigraphy():
 		self.ps_prot_wise_W_scores = self.ps_prot_wise_scores.apply(lambda x: x/np.sum(x),axis=1) 
 
 	
-	def phyloStrat_profile(self,table,bootstrap=0,b_fraction=0.9,agg_func="sum",b_n=0):
+	def phyloStrat_profile(self,table, bootstrap=0, b_fraction=0.99, agg_func="sum",b_n=0):
 		self.phyloStrat_profile = table.sum(axis=0)/table.shape[0]
 		self.phyloStrat_profile = self.phyloStrat_profile.reset_index(name="phyloStrat_sum")
 		if bootstrap > 0:
@@ -100,7 +100,7 @@ class phylostatigraphy():
 			print "Resampling ", bootstrap, "time the", b_fraction,"fraction of the data."
 			B = pd.DataFrame(np.zeros((bootstrap,ncol)))
 			for i in xrange(bootstrap):
-				B.ix[i,:] = self._bootstrap_table(table,fraction=b_fraction,agg_func=agg_func)
+				B.ix[i,:] = self._bootstrap_table(table,b_fraction,agg_func)
 			B /= nrow
 			self.phyloStrat_profile.ix[:,"phyloStrat_boot_mean"]   = B.mean(axis=0).values
 			self.phyloStrat_profile.ix[:,"phyloStrat_boot_q2_5"]   = np.percentile(B,2.5,axis=0)
@@ -109,9 +109,7 @@ class phylostatigraphy():
                         self.phyloStrat_profile.ix[:,"phyloStrat_boot_q84_1"]  = np.percentile(B,84.1,axis=0)
                         self.phyloStrat_profile.ix[:,"phyloStrat_boot_q97_5"]  = np.percentile(B,97.5,axis=0)
 
-
-
-	def _bootstrap_table(table,fraction=0.8,agg_func="sum"):
+	def _bootstrap_table(self,table,fraction,agg_func="sum"):
 		nrow,ncol = (table.shape)
 		back = np.zeros((1,ncol))
 		n_sampled = 0
