@@ -139,26 +139,26 @@ def get_lca_with_root2tip_lineages(lineage1,lineage2,ncbi):
     return lca_taxid, lca_rank, lca_common_name
 
 
+def _get_commonName_and_lineage(taxid,ncbi):
+    return ncbi.get_taxid_translator([taxid])[taxid], ncbi.get_lineage( taxid )
+
 # for a list of ids it returns the last common ancestor (and additional information) between the taxid on the list and a refid.
-def get_lca_for_list_with_ETE2(coming_in,ref_species_id=9606,ncbi):
+def get_lca_for_list_with_ETE2(coming_in,ref_species_id,ncbi):
     from ete2 import NCBITaxa
     ncbi = NCBITaxa()
     print return_time(), "Identifying last common ancestor between query specie and blast hits"
     back = {}
     
-    def _get_commonName_and_lineage(taxid):
-	return ncbi.get_taxid_translator([taxid])[taxid], ncbi.get_lineage( taxid )
-
-    ref_species_name, ref_lineage = _get_commonName_and_lineage(ref_species_id)
+    ref_species_name, ref_lineage = _get_commonName_and_lineage(ref_species_id,ncbi)
     for sbj_taxid in coming_in:
         if np.isnan(sbj_taxid):
             continue
         else:
-            sbj_name, sbj_node_lineage = _get_commonName_and_lineage( sbj_taxid )
+            sbj_name, sbj_node_lineage = _get_commonName_and_lineage( sbj_taxid , ncbi)
 	    # some times there are erros on the taxid and one needs to find the common name a the real stable taxid from the name
 	    if len(sbj_node_lineage) < 2:
 		sbj_new_taxid = ncbi.get_name_translator([sbj_name])[sbj_name]
-		sbj_name, sbj_node_lineage = _get_commonName_and_lineage( sbj_new_taxid )
+		sbj_name, sbj_node_lineage = _get_commonName_and_lineage( sbj_new_taxid , ncbi)
 		if len(sbj_node_lineage) < 2:
 			back[sbj_taxid] = [sbj_name, sbj_taxid, None, None, None]
 			break
