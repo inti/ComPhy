@@ -7,7 +7,7 @@ from ..utils import ttutils
 from ..utils import psutils
 
 class phylostratigraphy():
-	def __init__(self,ref_specie,alns,evalue_limit=1e-6,h5_gi_taxid_file="gi_taxid.h5",n_bootstrap = 0, fraction_rows_to_bootstrap= 0.1, n_rows_to_bootstrap = 0, ancestor_times = False):
+	def __init__(self,ref_specie,alns,evalue_limit=1e-6,h5_gi_taxid_file="../dbs/gi_taxid.h5",n_bootstrap = 0, fraction_rows_to_bootstrap= 0.1, n_rows_to_bootstrap = 0, ancestor_times = False):
 		#set some defaults
 		self.pandas = pd
 		self.ncbi_taxonomy = ncbi
@@ -113,7 +113,7 @@ class phylostratigraphy():
 		return back
 
 	def _get_ancestor_times(self):
-		self.timeTree_db = self.pandas.read_table("Hedges_MBE_Supporting_Tables_Excel_rev.txt",sep="\t")
+		self.timeTree_db = self.pandas.read_table("../dbs/Hedges_MBE_Supporting_Tables_Excel_rev.txt",sep="\t")
 		tt_taxids = self.pandas.Series(self.ncbi_taxonomy.get_name_translator(self.timeTree_db["Node Name"].astype(str))).reset_index(name = "ncbi_taxid")
 		self.timeTree_db = pd.merge(self.timeTree_db,tt_taxids,left_on="Node Name",right_on="index",how="outer")
 
