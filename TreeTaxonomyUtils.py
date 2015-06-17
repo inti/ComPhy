@@ -6,6 +6,10 @@ __version__ = '0.01'
 import pandas as pd
 import numpy as np
 import PhyloStratiphytUtils as psutils
+import datetime 
+
+def return_time():
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 def my_strip(text):
     try:
@@ -15,12 +19,12 @@ def my_strip(text):
 
 # wrapper over funtions to read files
 def load_ncbi_tax_files(nodes_file,names_file):
-    print psutils.return_time(), "Reading NCBI Taxonomy file"
-    print psutils.return_time(), "   ... [", nodes_file,"]"
+    print return_time(), "Reading NCBI Taxonomy file"
+    print return_time(), "   ... [", nodes_file,"]"
     nodes_table = read_nodes_file(nodes_file)
-    print psutils.return_time(), "   ... [", names_file,"]"
+    print return_time(), "   ... [", names_file,"]"
     names_table = read_names_file(names_file)
-    print psutils.return_time(), "   ... done"
+    print return_time(), "   ... done"
     return [ nodes_table, names_table ]
 
 
@@ -92,9 +96,10 @@ def get_lca(lineage1,lineage2):
             return [lca,i-1]
             break
 
+
 # for a list of ids it returns the last common ancestor (and additional information) between the taxid on the list and a refid.
 def get_lca_for_list(coming_in,nodes_table,names_table,ref_species_id=9606):
-    print psutils.return_time(), "Identifying last common ancestor between query specie and blast hits"
+    print return_time(), "Identifying last common ancestor between query specie and blast hits"
     back = {}
     ref_lineage = find_lineage_ById( ref_species_id, nodes_table)
     ref_species_name = get_name_ById( ref_species_id, names_table)
@@ -114,8 +119,54 @@ def get_lca_for_list(coming_in,nodes_table,names_table,ref_species_id=9606):
             back[sbj_taxid] = [sbj_name, sbj_taxid, qry_sbj_lca_name, qry_sbj_lca_id,qry_sbj_lca_rank]
 
     back = pd.DataFrame(back.values(), columns=['subject_name','subject_taxid','lca_name','lca_tax_id','lca_rank'])
-    print psutils.return_time(), "   ... done"
+    print return_time(), "   ... done"
     return back
 
+def get_lca_with_root2tip_lineages(lineage1,lineage2,ncbi):
+    # cap_size store the min length between the two lineages since the LCA must be between the root and this rank
+    size_cap = np.minimum(len(lineage1),len(lineage2))
+    # if they do not share the root of the tree there cannot be a LCA
+    if lineage1[0] != lineage2[0]: return None, None, None
+    # if tip is the same then it is the same specie
+    if lineage1[-1] == lineage2[-1]: return lineage1[-1], len(lineage1), ncbi.get_taxid_translator([lineage1[-1]])[lineage1[-1]] 
+    # it could happend that a sequence is annotated to a subspecie of the specie being analysed. On this case we will map the LCA to the specie, since by definition 
+    # the subspecie is not a differente specie and it is on the same *lineage*.
+    if lineage1[size_cap-1] == lineage2[size_cap-1]: return lineage1[size_cap-1], len(lineage1), ncbi.get_taxid_translator([lineage1[size_cap-1]])[lineage1[size_cap-1]]    
+
+    lca_rank = np.where(np.subtract(lineage1[:size_cap],lineage2[:size_cap]) != 0)[0].min() - 1
+    lca_taxid = lineage1[lca_rank]
+    lca_common_name = ncbi.get_taxid_translator([lca_taxid])[lca_taxid]
+    return lca_taxid, lca_rank, lca_common_name
+
+
+# for a list of ids it returns the last common ancestor (and additional information) between the taxid on the list and a refid.
+def get_lca_for_list_with_ETE2(coming_in,ref_species_id=9606,ncbi):
+    from ete2 import NCBITaxa
+    ncbi = NCBITaxa()
+    print return_time(), "Identifying last common ancestor between query specie and blast hits"
+    back = {}
+    
+    def _get_commonName_and_lineage(taxid):
+	return ncbi.get_taxid_translator([taxid])[taxid], ncbi.get_lineage( taxid )
+
+    ref_species_name, ref_lineage = _get_commonName_and_lineage(ref_species_id)
+    for sbj_taxid in coming_in:
+        if np.isnan(sbj_taxid):
+            continue
+        else:
+            sbj_name, sbj_node_lineage = _get_commonName_and_lineage( sbj_taxid )
+	    # some times there are erros on the taxid and one needs to find the common name a the real stable taxid from the name
+	    if len(sbj_node_lineage) < 2:
+		sbj_new_taxid = ncbi.get_name_translator([sbj_name])[sbj_name]
+		sbj_name, sbj_node_lineage = _get_commonName_and_lineage( sbj_new_taxid )
+		if len(sbj_node_lineage) < 2:
+			back[sbj_taxid] = [sbj_name, sbj_taxid, None, None, None]
+			break
+            lca_taxid, lca_rank, lca_common_name = get_lca_with_root2tip_lineages(ref_lineage,sbj_node_lineage,ncbi)
+	    back[sbj_taxid] = [sbj_name, sbj_taxid, lca_common_name, lca_taxid,lca_rank]
+
+    back = pd.DataFrame(back.values(), columns=['subject_name','subject_taxid','lca_name','lca_tax_id','lca_rank'])
+    print return_time(), "   ... done"
+    return back
 
 

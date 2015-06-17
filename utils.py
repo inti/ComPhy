@@ -34,7 +34,7 @@ class phylostatigraphy():
 			
 		self.score_table()
 		self.score_weight_table()
-		self.phyloStrat_profile(self.ps_prot_wise_W_scores,bootstrap=500)
+		self.phyloStrat_profile(self.ps_prot_wise_W_scores,bootstrap=10)
 
 
  	def _get_aln_results(self):
@@ -49,10 +49,25 @@ class phylostatigraphy():
 		where_is_none = np.where([lineage == None for lineage in self._subject_lineages])[0]
 		if np.sum(where_is_none) > 0:
 			self._subject_lineages = np.delete(self._subject_lineages, where_is_none )
+			self.df_subject_taxid = self.df_subject_taxid.drop(where_is_none)
 		
+		where_is_not_cellular =  np.where([lineage[1] != 131567 for lineage in self._subject_lineages])[0]
+		if np.sum(where_is_not_cellular) > 0:
+			self._subject_lineages = np.delete(self._subject_lineages, where_is_not_cellular )
+			self.df_subject_taxid = self.df_subject_taxid.drop(where_is_not_cellular)
+		self.df_subject_taxid = self.pandas.merge(self.df_subject_taxid, self.pandas.DataFrame( [lineage[-1] for lineage in self._subject_lineages ],columns=["taxid"]
+										     ),on="taxid",how="inner")	
+
+
 	def _get_lca_ete2(self,lineage1,lineage2):
 		lca = -1
 		if lineage1[-1] == lineage2[-1]: return lineage1[-1]
+		diff_len = np.abs(len(lineage1) - len(lineage2))
+		if len(lineage2) > len(lineage1):
+			if lineage1[-1] == lineage2[-1 + -1*diff_len]: return lineage1[-1]
+		if len(lineage1) > len(lineage2):
+			if lineage2[-1] == lineage1[-1 + -1*diff_len]: return lineage2[-1]
+
 		for c,(a,b) in enumerate(zip(lineage1,lineage2)):
     			if a != b:
         			lca = lineage1[c-1]
@@ -64,6 +79,7 @@ class phylostatigraphy():
 							zip([l[-1]  for l in self._subject_lineages],
 							    [self._get_lca_ete2(self.ref_specie_info['lineage'],l) for l in self._subject_lineages])
 						   )
+		
 		self.df_subject_taxid['lca'] = self.df_subject_taxid.apply(lambda x: subject_lineages_lcas[x['taxid']],axis=1)
 		self.df_subject_taxid['subject_binomial_name'] = self.ncbiquery.translate_to_names(self.df_subject_taxid.taxid.values)
 		self.df_subject_taxid['lca_binomial_name'] = self.ncbiquery.translate_to_names(self.df_subject_taxid.lca.values)
@@ -127,8 +143,8 @@ class phylostatigraphy():
 
 
 #ps = phylostatigraphy(ref_specie=9606,alns="example/dysbindin.blast_out.txt")
-ps = phylostatigraphy(ref_specie=144034,alns="example/blastp_Pbar_ant_vs_nr_e10.txt")
+#ps = phylostatigraphy(ref_specie=144034,alns="example/blastp_Pbar_ant_vs_nr_e10.txt")
+ps = phylostatigraphy(ref_specie=44477,alns="example/Apis_mellifera.Amel_2.0.13.pep.all.fa.nr.e10.sw.txt")
 ps.pipeline()
-ps.score_table()
 
 
