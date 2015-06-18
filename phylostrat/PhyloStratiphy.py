@@ -112,8 +112,8 @@ class phylostratigraphy():
 			back /= n_sampled
 		return back
 
-	def _get_ancestor_times(self):
-		self.timeTree_db = self.pandas.read_table("../dbs/Hedges_MBE_Supporting_Tables_Excel_rev.txt",sep="\t")
+	def get_ancestor_times(self,timetreedb):
+		self.timeTree_db = self.pandas.read_table(timetreedb,sep="\t")
 		tt_taxids = self.pandas.Series(self.ncbi_taxonomy.get_name_translator(self.timeTree_db["Node Name"].astype(str))).reset_index(name = "ncbi_taxid")
 		self.timeTree_db = pd.merge(self.timeTree_db,tt_taxids,left_on="Node Name",right_on="index",how="outer")
 
