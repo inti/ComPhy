@@ -5,7 +5,7 @@ __version__ = '0.01'
 
 import pandas as pd
 import numpy as np
-import PhyloStratiphytUtils as psutils
+#import PhyloStratiphytUtils as psutils
 import datetime 
 
 def return_time():

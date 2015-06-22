@@ -1,14 +1,13 @@
 
-import PhyloStratiphytUtils as psutils
-import TreeTaxonomyUtils as ttutils
 import pandas as pd
 import numpy as np
 from ete2 import NCBITaxa
 ncbi = NCBITaxa()
+from ..utils import ttutils
+from ..utils import psutils
 
-
-class phylostatigraphy():
-	def __init__(self,ref_specie,alns,evalue_limit=1e-6,h5_gi_taxid_file="gi_taxid.h5",n_bootstrap = 0, fraction_rows_to_bootstrap= 0.1, n_rows_to_bootstrap = 0, ancestor_times = False):
+class phylostratigraphy():
+	def __init__(self,ref_specie,alns,evalue_limit=1e-6,h5_gi_taxid_file="../dbs/gi_taxid.h5",n_bootstrap = 0, fraction_rows_to_bootstrap= 0.1, n_rows_to_bootstrap = 0, ancestor_times = False):
 		#set some defaults
 		self.pandas = pd
 		self.ncbi_taxonomy = ncbi
@@ -113,17 +112,10 @@ class phylostatigraphy():
 			back /= n_sampled
 		return back
 
-	def _get_ancestor_times(self):
-		self.timeTree_db = self.pandas.read_table("Hedges_MBE_Supporting_Tables_Excel_rev.txt",sep="\t")
+	def get_ancestor_times(self,timetreedb):
+		self.timeTree_db = self.pandas.read_table(timetreedb,sep="\t")
 		tt_taxids = self.pandas.Series(self.ncbi_taxonomy.get_name_translator(self.timeTree_db["Node Name"].astype(str))).reset_index(name = "ncbi_taxid")
 		self.timeTree_db = pd.merge(self.timeTree_db,tt_taxids,left_on="Node Name",right_on="index",how="outer")
 
-
-phylostratum_counts = pd.merge(phylostratum_counts,timetree_db[["Node Name","Adjusted Time","Study Count","95% CI Lower","95% CI Upper","ncbi_taxid"]],left_on="lca_tax_id",right_on="ncbi_taxid",how="left")
-
-
-
-#ps = phylostatigraphy(ref_specie=44477,alns="example/Apis_mellifera.Amel_2.0.13.pep.all.fa.nr.e10.sw.txt")
-#ps.pipeline()
 
 

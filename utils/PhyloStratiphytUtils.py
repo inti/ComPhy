@@ -8,7 +8,7 @@ import datetime
 import pandas as pd
 import numpy as np
 import os.path
-import TreeTaxonomyUtils as ttutils
+#import TreeTaxonomyUtils as ttutils
 import progressbar 
 from tables import *
 from Bio import SeqIO
