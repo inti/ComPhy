@@ -118,4 +118,25 @@ class phylostratigraphy():
 		self.timeTree_db = pd.merge(self.timeTree_db,tt_taxids,left_on="Node Name",right_on="index",how="outer")
 
 
+class ComPhy():
+        def __init__(self, muti_species_file, evalue_limit=1e-6, h5_gi_taxid_file="dbs/gi_taxid.h5", n_bootstrap = 0, fraction_rows_to_bootstrap= 0.1, n_rows_to_bootstrap = 0, ancestor_times = False):
+                #set some defaults
+                self.pandas = pd
+                self.ncbi_taxonomy = ncbi
+                self.alignments_evalue_limit = evalue_limit
+                self.h5_gi_taxid_file = h5_gi_taxid_file
+                ## compute some initial values
+                self.n_bootstrap = n_bootstrap
+                self.fraction_rows_to_bootstrap = fraction_rows_to_bootstrap
+                self.n_rows_to_bootstrap = n_rows_to_bootstrap
+                self.ancestor_times = ancestor_times
+		self.muti_species_file = muti_species_file
+		self.muti_species_table = self.pandas.read_table(muti_species_file,names=["ncbi_taxid","alignment_file"])
+		self.phylostratigraphy = phylostratigraphy
+		self.multi_phy = self.muti_species_table.apply(lambda x: self.phylostratigraphy(ref_specie=x["ncbi_taxid"],alns=x["alignment_file"], n_bootstrap=self.n_bootstrap, h5_gi_taxid_file=self.h5_gi_taxid_file, fraction_rows_to_bootstrap = self.fraction_rows_to_bootstrap, n_rows_to_bootstrap = self.n_rows_to_bootstrap, ancestor_times = self.ancestor_times),axis=1).values
+
+	def run(self):
+		for taxa_ps in self.multi_phy:
+			taxa_ps.pipeline()
+
 

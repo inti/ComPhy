@@ -1,4 +1,4 @@
-7460	Apis_mellifera.Amel_2.0.13.pep.all.fa.nr.e10.sw.txt
-104421	cflo_v3.3.pep.nr.e10.sw.txt
-710234	cquinquefasciatus.PEPTIDES-CpipJ1.2.fa.nr.e10.sw.txt
-7217	dana-all-translation-r1.3.fasta.nr.e10.sw.txt
+7460	example/Apis_mellifera.Amel_2.0.13.pep.all.fa.nr.e10.sw.txt
+104421	example/cflo_v3.3.pep.nr.e10.sw.txt
+710234	example/cquinquefasciatus.PEPTIDES-CpipJ1.2.fa.nr.e10.sw.txt
+7217	example/dana-all-translation-r1.3.fasta.nr.e10.sw.txt
