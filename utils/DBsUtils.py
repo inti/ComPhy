@@ -2,8 +2,11 @@ import pandas as pd
 from sqlalchemy import create_engine 
 import datetime as dt 
 def set_ETE2_NCBI_db(update=False):
-	pass
-	# do something
+	from ete2 import NCBITaxa
+	ncbi = NCBITaxa()
+	if update:
+		ncbi.update_taxonomy_database()
+	return ncbi
 
 def set_NCBI_GI_to_TAX_db(gi_taxid_dump,db_name,chunk_size):
 	print dt.datetime.now(), "Openning file [",gi_taxid_dump,"]"
@@ -23,10 +26,11 @@ def set_NCBI_GI_to_TAX_db(gi_taxid_dump,db_name,chunk_size):
 	h5_store.create_table_index('gi_taxid',columns=["gi"], kind='full')
 	h5_store.close()
 	print dt.datetime.now(), "   '-> done "
-	print dt.datetime.now(), "Building CSI index on gi column"
-	db_name_sorted = ''.join((db_name.strip("h5"),"sorted.h5"))
-	cmd = ''.join(("ptrepack --complib=blosc --chunkshape=auto --sortby=gi ",db_name," ", db_name_sorted)) #ptrepack --chunkshape=auto --sortby=gi gi_taxid_prot.h5 gi_taxid_prot.sorted.h5 --complib=blosc --complevel=6  --dont-regenerate-old-indexes --overwrite-nodes 
-	os.sys(cmd)
-        print dt.datetime.now(), "   '-> done "
+	# Commented: input tables is already sorted by gi so no need to build a CSI
+	#print dt.datetime.now(), "Building CSI index on gi column"
+	#db_name_sorted = ''.join((db_name.strip("h5"),"sorted.h5"))
+	#cmd = ''.join(("ptrepack --complib=blosc --chunkshape=auto --sortby=gi ",db_name," ", db_name_sorted)) #ptrepack --chunkshape=auto --sortby=gi gi_taxid_prot.h5 gi_taxid_prot.sorted.h5 --complib=blosc --complevel=6  --dont-regenerate-old-indexes --overwrite-nodes
+	#os.sys(cmd)
+        #print dt.datetime.now(), "   '-> done "
 
 
