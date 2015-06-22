@@ -22,14 +22,14 @@ def add_taxid_from_h5file(table,file):
     n_unique_gi = table_grouped.ngroups
     print return_time(), "   ... [",n_unique_gi,"] GIs to search for"
     b_chunk_size = 1000000
-    nrows_b = h5file.root.gi_2_taxid.table.nrows
+    nrows_b = h5file.root.gi_taxid.table.nrows
     df_lot = []
     pbar = progressbar.ProgressBar(maxval=nrows_b+1, term_width=50,widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()]).start()
     for b in xrange(int(nrows_b / b_chunk_size) + 1):
         b_start_i = b * b_chunk_size
         b_stop_i = min((b + 1) * b_chunk_size, nrows_b)
         
-        B = h5file.select('gi_2_taxid', start = b_start_i, stop = b_stop_i)
+        B = h5file.select('gi_taxid', start = b_start_i, stop = b_stop_i)
         intersection = df_unique_gi.ix[ df_unique_gi['subject_gi'].isin( B['gi'] ),'subject_gi']
         if len(intersection) > 0:
             df_lot.append(pd.merge(df_unique_gi,B,left_on='subject_gi',right_on='gi',how='inner'))

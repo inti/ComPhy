@@ -44,11 +44,11 @@ class phylostratigraphy():
 	
 	def _get_unique_subject_gi(self):
 		self.df_subject_taxid = psutils.add_taxid_from_h5file(table = self.alignments_table,file = self.h5_gi_taxid_file)
-		self.df_subject_taxid = self.df_subject_taxid[ self.df_subject_taxid.taxid >0 ]
+		self.df_subject_taxid = self.df_subject_taxid[ self.df_subject_taxid.ncbi_taxid >0 ]
 
 	def _get_lca_ete2(self):
-		self.hits_lcas = ttutils.get_lca_for_list_with_ETE2( self.pandas.unique( self.df_subject_taxid.taxid),self.ref_specie_info["taxid"],self.ncbi_taxonomy)
-		self.df_subject_taxid  = self.pandas.merge( self.df_subject_taxid,self.hits_lcas,left_on = "taxid",right_on="subject_taxid")
+		self.hits_lcas = ttutils.get_lca_for_list_with_ETE2( self.pandas.unique( self.df_subject_taxid.ncbi_taxid),self.ref_specie_info["taxid"],self.ncbi_taxonomy)
+		self.df_subject_taxid  = self.pandas.merge( self.df_subject_taxid,self.hits_lcas,left_on = "ncbi_taxid",right_on="subject_taxid")
 		self.alignments_table = self.pandas.merge(self.alignments_table, self.df_subject_taxid ,on="subject_gi")
 
 	def _phyloStrat_table(self):
