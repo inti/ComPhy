@@ -8,7 +8,12 @@ def set_ETE2_NCBI_db(update=False):
 		ncbi.update_taxonomy_database()
 	return ncbi
 
-def set_NCBI_GI_to_TAX_db(gi_taxid_dump,db_name,chunk_size):
+def set_NCBI_GI_to_TAX_db(gi_taxid_dump,db_name,chunk_size,download=False,url_file='ftp://ftp.ncbi.nih.gov/pub/taxonomy/gi_taxid_prot.dmp.gz'):
+	if download:
+		print dt.datetime.now(), "Downloading [",url_file,"]"
+		_download_url_file(url_file)
+		gi_taxid_dump='gi_taxid_prot.dmp.gz'
+
 	print dt.datetime.now(), "Openning file [",gi_taxid_dump,"]"
 	file = pd.read_table(gi_taxid_dump,compression="gzip",chunksize=chunk_size,iterator=True,names=["gi","ncbi_taxid"])
 
@@ -33,4 +38,28 @@ def set_NCBI_GI_to_TAX_db(gi_taxid_dump,db_name,chunk_size):
 	#os.sys(cmd)
         #print dt.datetime.now(), "   '-> done "
 
+
+def _download_url_file(url):
+	import urllib2
+	file_name = url.split('/')[-1]
+	u = urllib2.urlopen(url)
+	f = open(file_name, 'wb')
+	meta = u.info()
+	file_size = int(meta.getheaders("Content-Length")[0])
+	print "Downloading: %s Bytes: %s" % (file_name, file_size)
+
+	file_size_dl = 0
+	block_sz = 8192
+	while True:
+	    buffer = u.read(block_sz)
+	    if not buffer:
+		break
+
+	    file_size_dl += len(buffer)
+	    f.write(buffer)
+	    status = r"%10d  [%3.2f%%]" % (file_size_dl, file_size_dl * 100. / file_size)
+	    status = status + chr(8)*(len(status)+1)
+	    print status,
+
+	f.close()
 
