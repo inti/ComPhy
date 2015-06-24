@@ -1,6 +1,6 @@
 import pandas as pd
-from sqlalchemy import create_engine 
 import datetime as dt 
+
 def set_ETE2_NCBI_db(update=False):
 	from ete2 import NCBITaxa
 	ncbi = NCBITaxa()
