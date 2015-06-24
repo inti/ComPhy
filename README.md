@@ -33,3 +33,17 @@ Inti Pedroso: IntiPeroso@gmail.com
 Pedroso I, Brown MJF, Sumner S. Detecting gene innovations for phenotypic diversity across multiple genomes. http://arxiv.org/abs/1212.3827
 
 Domazet-Loso, T., and Tautz, D. (2003). An evolutionary analysis of orphan genes in Drosophila. Genome Res. 13, 2213-2219.
+
+# Development TODO
+
+- [x] Update README
+- [ ] Provide basic commands to set up a anaconda enviroment for the analyses.
+- [ ] Provide some basic examples of how to perform the analyses.
+- [ ] Add an ipython-notebook with examples including plotting.
+- [ ] Implement comparative methods available on the old Perl package on the new version.
+- [ ] Extend comparative methods to include Latent Variable Methods and other regression methodologies.
+- [ ] Add format to store results from analyses so they can be loaded into a object and integrated with results.
+
+
+
+
