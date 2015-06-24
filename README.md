@@ -1,5 +1,5 @@
 # ComPhy
-	This package implements routines for Comparative Phylostratigraphy, i.e., to obtained and compare phylostratigraphic profiles. It allows to calculate the profiles as orifinally described by Domazet-Loso et. al. (2003) and also provides interesting extentions that are under development.
+This package implements routines for Comparative Phylostratigraphy, i.e., to obtained and compare phylostratigraphic profiles. It allows to calculate the profiles as orifinally described by Domazet-Loso et. al. (2003) and also provides interesting extentions that are under development.
 
 # Requirments
 Several Python packages are needed:
