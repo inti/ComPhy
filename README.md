@@ -2,7 +2,7 @@
 
 This is a Perl implementation of the PhyloStratigraphy comparative genomics methods. This program will perform a PhyloStratigraphy analysis. It provides a implementation and extensions of the original methodology of Domazet-Loso et. al. (2003).
  
-	Please see README for information on Perl module requirments and some additional information.
+Please see README for information on Perl module requirments and some additional information.
  
 ## Command line options
 
